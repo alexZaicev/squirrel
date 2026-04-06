@@ -856,12 +856,6 @@ func TestExprRecursion(t *testing.T) {
 	}
 }
 
-func ExampleEq() {
-	Select("id", "created", "first_name").From("users").Where(Eq{
-		"company": 20,
-	})
-}
-
 func TestEqSubqueryToSql(t *testing.T) {
 	subQ := Select("id").From("other_table").Where(Eq{"active": true})
 	b := Eq{"id": subQ}
