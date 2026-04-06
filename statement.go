@@ -87,6 +87,26 @@ func Delete(from string) DeleteBuilder {
 	return StatementBuilder.Delete(from)
 }
 
+// Union returns a new UnionBuilder combining the given SELECTs with UNION.
+func Union(selects ...SelectBuilder) UnionBuilder {
+	return newUnionBuilder("UNION", selects)
+}
+
+// UnionAll returns a new UnionBuilder combining the given SELECTs with UNION ALL.
+func UnionAll(selects ...SelectBuilder) UnionBuilder {
+	return newUnionBuilder("UNION ALL", selects)
+}
+
+// Intersect returns a new UnionBuilder combining the given SELECTs with INTERSECT.
+func Intersect(selects ...SelectBuilder) UnionBuilder {
+	return newUnionBuilder("INTERSECT", selects)
+}
+
+// Except returns a new UnionBuilder combining the given SELECTs with EXCEPT.
+func Except(selects ...SelectBuilder) UnionBuilder {
+	return newUnionBuilder("EXCEPT", selects)
+}
+
 // Case returns a new CaseBuilder
 // "what" represents case value
 func Case(what ...any) CaseBuilder {

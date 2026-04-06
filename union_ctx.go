@@ -1,0 +1,69 @@
+//go:build go1.8
+
+package squirrel
+
+import (
+	"context"
+	"database/sql"
+
+	"github.com/lann/builder"
+)
+
+func (d *unionData) ExecContext(ctx context.Context) (sql.Result, error) {
+	if d.RunWith == nil {
+		return nil, ErrRunnerNotSet
+	}
+	ctxRunner, ok := d.RunWith.(ExecerContext)
+	if !ok {
+		return nil, ErrNoContextSupport
+	}
+	return ExecContextWith(ctx, ctxRunner, d)
+}
+
+func (d *unionData) QueryContext(ctx context.Context) (*sql.Rows, error) {
+	if d.RunWith == nil {
+		return nil, ErrRunnerNotSet
+	}
+	ctxRunner, ok := d.RunWith.(QueryerContext)
+	if !ok {
+		return nil, ErrNoContextSupport
+	}
+	return QueryContextWith(ctx, ctxRunner, d)
+}
+
+func (d *unionData) QueryRowContext(ctx context.Context) RowScanner {
+	if d.RunWith == nil {
+		return &Row{err: ErrRunnerNotSet}
+	}
+	queryRower, ok := d.RunWith.(QueryRowerContext)
+	if !ok {
+		if _, ok := d.RunWith.(QueryerContext); !ok {
+			return &Row{err: ErrRunnerNotQueryRunner}
+		}
+		return &Row{err: ErrNoContextSupport}
+	}
+	return QueryRowContextWith(ctx, queryRower, d)
+}
+
+// ExecContext builds and ExecContexts the query with the Runner set by RunWith.
+func (b UnionBuilder) ExecContext(ctx context.Context) (sql.Result, error) {
+	data := builder.GetStruct(b).(unionData)
+	return data.ExecContext(ctx)
+}
+
+// QueryContext builds and QueryContexts the query with the Runner set by RunWith.
+func (b UnionBuilder) QueryContext(ctx context.Context) (*sql.Rows, error) {
+	data := builder.GetStruct(b).(unionData)
+	return data.QueryContext(ctx)
+}
+
+// QueryRowContext builds and QueryRowContexts the query with the Runner set by RunWith.
+func (b UnionBuilder) QueryRowContext(ctx context.Context) RowScanner {
+	data := builder.GetStruct(b).(unionData)
+	return data.QueryRowContext(ctx)
+}
+
+// ScanContext is a shortcut for QueryRowContext().Scan.
+func (b UnionBuilder) ScanContext(ctx context.Context, dest ...any) error {
+	return b.QueryRowContext(ctx).Scan(dest...)
+}
