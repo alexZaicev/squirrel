@@ -122,25 +122,25 @@ func TestAtpNoPlaceholders(t *testing.T) {
 func TestQuestionEmptySQL(t *testing.T) {
 	s, err := Question.ReplacePlaceholders("")
 	assert.NoError(t, err)
-	assert.Equal(t, "", s)
+	assert.Empty(t, s)
 }
 
 func TestDollarEmptySQL(t *testing.T) {
 	s, err := Dollar.ReplacePlaceholders("")
 	assert.NoError(t, err)
-	assert.Equal(t, "", s)
+	assert.Empty(t, s)
 }
 
 func TestColonEmptySQL(t *testing.T) {
 	s, err := Colon.ReplacePlaceholders("")
 	assert.NoError(t, err)
-	assert.Equal(t, "", s)
+	assert.Empty(t, s)
 }
 
 func TestAtpEmptySQL(t *testing.T) {
 	s, err := AtP.ReplacePlaceholders("")
 	assert.NoError(t, err)
-	assert.Equal(t, "", s)
+	assert.Empty(t, s)
 }
 
 func TestPlaceholders(t *testing.T) {
@@ -148,11 +148,11 @@ func TestPlaceholders(t *testing.T) {
 }
 
 func TestPlaceholdersZero(t *testing.T) {
-	assert.Equal(t, "", Placeholders(0))
+	assert.Empty(t, Placeholders(0))
 }
 
 func TestPlaceholdersNegative(t *testing.T) {
-	assert.Equal(t, "", Placeholders(-1))
+	assert.Empty(t, Placeholders(-1))
 }
 
 func TestPlaceholdersOne(t *testing.T) {
