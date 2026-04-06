@@ -1701,3 +1701,113 @@ func TestExprExists(t *testing.T) {
 		assert.Equal(t, []string{"dairy", "fruit"}, names)
 	})
 }
+
+// ---------------------------------------------------------------------------
+// Multi-key expressions inside Or — GitHub #269
+// ---------------------------------------------------------------------------
+
+func TestExprOrWithMultiKeyEq(t *testing.T) {
+	t.Run("BasicMultiKeyEqInsideOr", func(t *testing.T) {
+		// Arrange — (category = 'fruit' AND price = 50) OR (category = 'vegetable' AND price = 75)
+		q := sb.Select("name").From("sq_items").
+			Where(sqrl.Or{
+				sqrl.Eq{"category": "fruit", "price": 50},
+				sqrl.Eq{"category": "vegetable", "price": 75},
+			}).
+			OrderBy("id")
+
+		// Act
+		names := queryStrings(t, q)
+
+		// Assert — banana (fruit, 50), carrot (vegetable, 75)
+		assert.Equal(t, []string{"banana", "carrot"}, names)
+	})
+
+	t.Run("MultiKeyEqInsideOrNoMatch", func(t *testing.T) {
+		// Arrange — combinations that don't match any row
+		q := sb.Select("name").From("sq_items").
+			Where(sqrl.Or{
+				sqrl.Eq{"category": "fruit", "price": 999},
+				sqrl.Eq{"category": "vegetable", "price": 999},
+			}).
+			OrderBy("id")
+
+		// Act
+		names := queryStrings(t, q)
+
+		// Assert — no rows
+		assert.Empty(t, names)
+	})
+
+	t.Run("MixedMultiKeyAndSingleKeyInsideOr", func(t *testing.T) {
+		// Arrange — (category = 'fruit' AND price = 100) OR (id = 4)
+		q := sb.Select("name").From("sq_items").
+			Where(sqrl.Or{
+				sqrl.Eq{"category": "fruit", "price": 100},
+				sqrl.Eq{"id": 4},
+			}).
+			OrderBy("id")
+
+		// Act
+		names := queryStrings(t, q)
+
+		// Assert — apple (fruit, 100), donut (id 4)
+		assert.Equal(t, []string{"apple", "donut"}, names)
+	})
+
+	t.Run("MultiKeyLtInsideOr", func(t *testing.T) {
+		// Arrange — (id < 2 AND price < 200) OR (id > 5)
+		q := sb.Select("name").From("sq_items").
+			Where(sqrl.Or{
+				sqrl.Lt{"id": 2, "price": 200},
+				sqrl.Gt{"id": 5},
+			}).
+			OrderBy("id")
+
+		// Act
+		names := queryStrings(t, q)
+
+		// Assert — apple (id 1, price 100 < 200), mystery (id 6)
+		assert.Equal(t, []string{"apple", "mystery"}, names)
+	})
+
+	t.Run("MultiKeyEqWithDollarPlaceholders", func(t *testing.T) {
+		// Arrange — verify Dollar placeholders work correctly with parenthesized multi-key Eq
+		q := sqrl.Select("name").From("sq_items").
+			Where(sqrl.Or{
+				sqrl.Eq{"category": "fruit", "price": 50},
+				sqrl.Eq{"category": "vegetable", "price": 75},
+			}).
+			PlaceholderFormat(sqrl.Dollar)
+
+		sqlStr, args, err := q.ToSQL()
+		require.NoError(t, err)
+
+		// Assert — correct SQL with dollar placeholders and parenthesized groups
+		assert.Equal(t, "SELECT name FROM sq_items WHERE ((category = $1 AND price = $2) OR (category = $3 AND price = $4))", sqlStr)
+		assert.Equal(t, []interface{}{"fruit", 50, "vegetable", 75}, args)
+	})
+
+	t.Run("MultiKeyNotEqInsideOr", func(t *testing.T) {
+		// Arrange — (category <> 'fruit' AND price <> 200) OR (id = 2)
+		q := sb.Select("name").From("sq_items").
+			Where(sqrl.Or{
+				sqrl.NotEq{"category": "fruit", "price": 200},
+				sqrl.Eq{"id": 2},
+			}).
+			Where(sqrl.NotEq{"category": nil}).
+			OrderBy("id")
+
+		// Act
+		names := queryStrings(t, q)
+
+		// Assert — banana (matched by Or/Eq id=2); carrot (vegetable, 75); eggplant (vegetable, 150)
+		// donut: category=pastry <> fruit ✓, price=200 <> 200 ✗ → first branch fails, id=2? no → excluded
+		// Wait: apple is fruit, so category<>'fruit' is false → excluded from first branch; id=2? no
+		// banana: category='fruit' so category<>'fruit'=false → first branch fails; id=2? yes → included
+		// carrot: category='vegetable'<>'fruit' ✓, price=75<>200 ✓ → included
+		// donut: category='pastry'<>'fruit' ✓, price=200<>200 ✗ → first branch fails; id=2? no → excluded
+		// eggplant: category='vegetable'<>'fruit' ✓, price=150<>200 ✓ → included
+		assert.Equal(t, []string{"banana", "carrot", "eggplant"}, names)
+	})
+}

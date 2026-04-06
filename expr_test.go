@@ -205,7 +205,7 @@ func TestBetweenMultipleKeysToSql(t *testing.T) {
 	sql, args, err := b.ToSQL()
 	assert.NoError(t, err)
 
-	expectedSQL := "age BETWEEN ? AND ? AND price BETWEEN ? AND ?"
+	expectedSQL := "(age BETWEEN ? AND ? AND price BETWEEN ? AND ?)"
 	assert.Equal(t, expectedSQL, sql)
 
 	expectedArgs := []any{18, 65, 10, 100}
@@ -706,6 +706,135 @@ func TestOrContainingNotToSql(t *testing.T) {
 	assert.Equal(t, []any{1, 2}, args)
 }
 
+func TestOrWithMultiKeyEqToSql(t *testing.T) {
+	// GitHub #269 — multi-key Eq inside Or must be parenthesized.
+	b := Or{Eq{"a": 1, "b": 2}, Eq{"c": 3, "d": 4}}
+	sql, args, err := b.ToSQL()
+	assert.NoError(t, err)
+
+	expectedSQL := "((a = ? AND b = ?) OR (c = ? AND d = ?))"
+	assert.Equal(t, expectedSQL, sql)
+
+	expectedArgs := []any{1, 2, 3, 4}
+	assert.Equal(t, expectedArgs, args)
+}
+
+func TestOrWithMultiKeyNotEqToSql(t *testing.T) {
+	b := Or{NotEq{"a": 1, "b": 2}, NotEq{"c": 3, "d": 4}}
+	sql, args, err := b.ToSQL()
+	assert.NoError(t, err)
+
+	expectedSQL := "((a <> ? AND b <> ?) OR (c <> ? AND d <> ?))"
+	assert.Equal(t, expectedSQL, sql)
+
+	expectedArgs := []any{1, 2, 3, 4}
+	assert.Equal(t, expectedArgs, args)
+}
+
+func TestOrWithMultiKeyLtToSql(t *testing.T) {
+	b := Or{Lt{"a": 1, "b": 2}, Gt{"c": 3, "d": 4}}
+	sql, args, err := b.ToSQL()
+	assert.NoError(t, err)
+
+	expectedSQL := "((a < ? AND b < ?) OR (c > ? AND d > ?))"
+	assert.Equal(t, expectedSQL, sql)
+
+	expectedArgs := []any{1, 2, 3, 4}
+	assert.Equal(t, expectedArgs, args)
+}
+
+func TestOrWithMultiKeyBetweenToSql(t *testing.T) {
+	b := Or{
+		Between{"a": [2]interface{}{1, 10}, "b": [2]interface{}{20, 30}},
+		Between{"c": [2]interface{}{40, 50}},
+	}
+	sql, args, err := b.ToSQL()
+	assert.NoError(t, err)
+
+	expectedSQL := "((a BETWEEN ? AND ? AND b BETWEEN ? AND ?) OR c BETWEEN ? AND ?)"
+	assert.Equal(t, expectedSQL, sql)
+
+	expectedArgs := []any{1, 10, 20, 30, 40, 50}
+	assert.Equal(t, expectedArgs, args)
+}
+
+func TestOrWithMixedMultiKeySingleKeyEqToSql(t *testing.T) {
+	// One multi-key Eq (parenthesized) and one single-key Eq (not parenthesized).
+	b := Or{Eq{"a": 1, "b": 2}, Eq{"c": 3}}
+	sql, args, err := b.ToSQL()
+	assert.NoError(t, err)
+
+	expectedSQL := "((a = ? AND b = ?) OR c = ?)"
+	assert.Equal(t, expectedSQL, sql)
+
+	expectedArgs := []any{1, 2, 3}
+	assert.Equal(t, expectedArgs, args)
+}
+
+func TestAndWithMultiKeyEqToSql(t *testing.T) {
+	// Multi-key Eq inside And — parenthesization is still correct.
+	b := And{Eq{"a": 1, "b": 2}, Eq{"c": 3, "d": 4}}
+	sql, args, err := b.ToSQL()
+	assert.NoError(t, err)
+
+	expectedSQL := "((a = ? AND b = ?) AND (c = ? AND d = ?))"
+	assert.Equal(t, expectedSQL, sql)
+
+	expectedArgs := []any{1, 2, 3, 4}
+	assert.Equal(t, expectedArgs, args)
+}
+
+func TestOrWithMultiKeyEqInSelectWhereToSql(t *testing.T) {
+	// Full integration with SelectBuilder.
+	b := Select("*").From("t").Where(Or{
+		Eq{"col1": 1, "col2": 2},
+		Eq{"col1": 3, "col2": 4},
+	})
+	sql, args, err := b.ToSQL()
+	assert.NoError(t, err)
+
+	expectedSQL := "SELECT * FROM t WHERE ((col1 = ? AND col2 = ?) OR (col1 = ? AND col2 = ?))"
+	assert.Equal(t, expectedSQL, sql)
+
+	expectedArgs := []any{1, 2, 3, 4}
+	assert.Equal(t, expectedArgs, args)
+}
+
+func TestOrWithMultiKeyEqDollarPlaceholders(t *testing.T) {
+	b := Select("*").From("t").Where(Or{
+		Eq{"a": 1, "b": 2},
+		Eq{"c": 3, "d": 4},
+	}).PlaceholderFormat(Dollar)
+	sql, args, err := b.ToSQL()
+	assert.NoError(t, err)
+
+	expectedSQL := "SELECT * FROM t WHERE ((a = $1 AND b = $2) OR (c = $3 AND d = $4))"
+	assert.Equal(t, expectedSQL, sql)
+
+	expectedArgs := []any{1, 2, 3, 4}
+	assert.Equal(t, expectedArgs, args)
+}
+
+func TestSingleKeyEqStillUnparenthesized(t *testing.T) {
+	// Single-key Eq should NOT be wrapped in parentheses.
+	b := Eq{"a": 1}
+	sql, args, err := b.ToSQL()
+	assert.NoError(t, err)
+
+	assert.Equal(t, "a = ?", sql)
+	assert.Equal(t, []any{1}, args)
+}
+
+func TestSingleKeyLtStillUnparenthesized(t *testing.T) {
+	// Single-key Lt should NOT be wrapped in parentheses.
+	b := Lt{"a": 1}
+	sql, args, err := b.ToSQL()
+	assert.NoError(t, err)
+
+	assert.Equal(t, "a < ?", sql)
+	assert.Equal(t, []any{1}, args)
+}
+
 func TestNotExistsEquivalenceToSql(t *testing.T) {
 	// Not{Cond: Exists(sub)} should produce the same args as NotExists(sub),
 	// though the SQL wrapping differs slightly.
@@ -789,7 +918,7 @@ func TestSqlEqOrder(t *testing.T) {
 	sql, args, err := b.ToSQL()
 	assert.NoError(t, err)
 
-	expectedSQL := "a = ? AND b = ? AND c = ?"
+	expectedSQL := "(a = ? AND b = ? AND c = ?)"
 	assert.Equal(t, expectedSQL, sql)
 
 	expectedArgs := []any{1, 2, 3}
@@ -801,7 +930,7 @@ func TestSqlLtOrder(t *testing.T) {
 	sql, args, err := b.ToSQL()
 	assert.NoError(t, err)
 
-	expectedSQL := "a < ? AND b < ? AND c < ?"
+	expectedSQL := "(a < ? AND b < ? AND c < ?)"
 	assert.Equal(t, expectedSQL, sql)
 
 	expectedArgs := []any{1, 2, 3}
@@ -903,7 +1032,7 @@ func TestEqSubqueryWithMultipleKeysToSql(t *testing.T) {
 	sql, args, err := b.ToSQL()
 	assert.NoError(t, err)
 
-	expectedSQL := "active = ? AND user_id IN (SELECT id FROM active_users)"
+	expectedSQL := "(active = ? AND user_id IN (SELECT id FROM active_users))"
 	assert.Equal(t, expectedSQL, sql)
 
 	expectedArgs := []any{true}

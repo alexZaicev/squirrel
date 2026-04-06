@@ -221,6 +221,9 @@ func (eq Eq) toSQL(useNotOpr bool) (sql string, args []any, err error) {
 		exprs = append(exprs, expr)
 	}
 	sql = strings.Join(exprs, " AND ")
+	if len(exprs) > 1 {
+		sql = fmt.Sprintf("(%s)", sql)
+	}
 	return
 }
 
@@ -269,6 +272,9 @@ func (lk Like) toSQL(opr string) (sql string, args []any, err error) {
 		exprs = append(exprs, expr)
 	}
 	sql = strings.Join(exprs, " AND ")
+	if len(exprs) > 1 {
+		sql = fmt.Sprintf("(%s)", sql)
+	}
 	return
 }
 
@@ -366,6 +372,9 @@ func (lt Lt) toSQL(opposite, orEq bool) (sql string, args []any, err error) {
 		exprs = append(exprs, expr)
 	}
 	sql = strings.Join(exprs, " AND ")
+	if len(exprs) > 1 {
+		sql = fmt.Sprintf("(%s)", sql)
+	}
 	return
 }
 
@@ -444,6 +453,9 @@ func (b Between) toSQL(opr string) (sql string, args []any, err error) {
 		}
 	}
 	sql = strings.Join(exprs, " AND ")
+	if len(exprs) > 1 {
+		sql = fmt.Sprintf("(%s)", sql)
+	}
 	return
 }
 

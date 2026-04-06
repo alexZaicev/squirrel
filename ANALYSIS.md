@@ -272,16 +272,25 @@ While unlikely to be exploitable in practice today, duplicated security-critical
 
 ## 3. Outstanding Bug Fixes (from GitHub Issues)
 
-### 3.1 🔴 CRITICAL — `Or{Eq{"a": 1, "b": 2}, Eq{"c": 3, "d": 4}}` Produces Wrong Precedence
+### 3.1 ✅ FIXED — `Or{Eq{"a": 1, "b": 2}, Eq{"c": 3, "d": 4}}` Produces Wrong Precedence — **DONE**
 
 > **GitHub [#269](https://github.com/Masterminds/squirrel/issues/269)** — "[BUG] Missing brackets when using several sq.Eq inside sq.Or" (2 comments, opened 2020-12-11).
 
-When a multi-key `Eq` (which produces `a = ? AND b = ?`) is placed inside an `Or`, the generated SQL lacks parentheses around each `Eq` group:
+~~When a multi-key `Eq` (which produces `a = ? AND b = ?`) is placed inside an `Or`, the generated SQL lacks parentheses around each `Eq` group:~~
 ```sql
--- Actual:   WHERE (col1 = ? AND col2 = ? OR col1 = ? AND col2 = ?)
--- Expected: WHERE ((col1 = ? AND col2 = ?) OR (col1 = ? AND col2 = ?))
+-- Before (broken): WHERE (col1 = ? AND col2 = ? OR col1 = ? AND col2 = ?)
+-- After  (fixed):  WHERE ((col1 = ? AND col2 = ?) OR (col1 = ? AND col2 = ?))
 ```
-Due to SQL operator precedence (`AND` binds tighter than `OR`), the actual output happens to evaluate the same way, but the missing parentheses are **incorrect** per the documented intent, confusing, and fragile if the expression structure changes. The `Eq.ToSql()` method should wrap multi-key output in parentheses.
+
+**Fixed** (April 2026) by wrapping multi-key output in parentheses when the map-based expression type produces more than one AND-joined condition. The fix applies to all four map-based expression types: `Eq`/`NotEq`, `Lt`/`Gt`/`LtOrEq`/`GtOrEq`, `Like`/`NotLike`/`ILike`/`NotILike`, and `Between`/`NotBetween`.
+
+**Behavior:**
+- Single-key maps are **unchanged** — `Eq{"a": 1}` still produces `a = ?` (no parentheses)
+- Multi-key maps are now parenthesized — `Eq{"a": 1, "b": 2}` produces `(a = ? AND b = ?)`
+- This ensures correct precedence when used inside `Or{}`: `Or{Eq{"a": 1, "b": 2}, Eq{"c": 3}}` → `((a = ? AND b = ?) OR c = ?)`
+- Works correctly with all placeholder formats (`Question`, `Dollar`, `Colon`, `AtP`)
+
+**Files modified:** `expr.go`, `expr_test.go`, `where_test.go`, `integration/expr_test.go`. Full unit test coverage including `Or` with multi-key `Eq`, `NotEq`, `Lt`/`Gt`, `Between`, mixed multi-key/single-key, `And` with multi-key, `SelectBuilder.Where()` integration, Dollar placeholders, and single-key non-regression. Integration tests cover basic multi-key `Eq` inside `Or`, no-match scenarios, mixed multi-key/single-key, multi-key `Lt`/`Gt`, `NotEq`, and Dollar placeholder correctness.
 
 ### 3.2 🔴 HIGH — Multiple `Distinct()` Calls Produce Invalid SQL
 
@@ -408,7 +417,7 @@ Building an insert incrementally — adding a column+value pair after the initia
 | 🟡 High | Multiple `Distinct()` calls produce invalid SQL | [#281](https://github.com/Masterminds/squirrel/issues/281) | Bug |
 | 🟡 High | `CaseBuilder` rejects non-string `int` values in When/Then | [#388](https://github.com/Masterminds/squirrel/issues/388) | Bug |
 | 🟡 High | Conditional insert columns/values produce invalid SQL | [#336](https://github.com/Masterminds/squirrel/issues/336) | Bug |
-| 🟡 High | Multi-key `Eq` inside `Or` missing parentheses | [#269](https://github.com/Masterminds/squirrel/issues/269) | Bug |
+| ✅ Fixed | Multi-key `Eq` inside `Or` missing parentheses | [#269](https://github.com/Masterminds/squirrel/issues/269) | Bug |
 | 🟡 Medium | `nil` array in `Eq` produces `(1=0)` instead of `IS NULL` | [#277](https://github.com/Masterminds/squirrel/issues/277) | Bug |
 | 🟡 Medium | `Where()` with raw string + slice arg doesn't expand | [#383](https://github.com/Masterminds/squirrel/issues/383) | Bug |
 | 🟢 Low | `Where()` doesn't auto-parenthesize raw OR expressions | [#380](https://github.com/Masterminds/squirrel/issues/380) | Bug |

@@ -44,7 +44,7 @@ func TestWherePartString(t *testing.T) {
 func TestWherePartMap(t *testing.T) {
 	test := func(pred any) {
 		sql, _, _ := newWherePart(pred).ToSQL()
-		expect := []string{"x = ? AND y = ?", "y = ? AND x = ?"}
+		expect := []string{"(x = ? AND y = ?)", "(y = ? AND x = ?)"}
 		if sql != expect[0] && sql != expect[1] {
 			t.Errorf("expected one of %#v, got %#v", expect, sql)
 		}
