@@ -417,3 +417,87 @@ func TestInsertBuilderOnConflictDoUpdateSubquery(t *testing.T) {
 	expectedArgs := []any{1, "John", 1}
 	assert.Equal(t, expectedArgs, args)
 }
+
+func TestInsertBuilderReturning(t *testing.T) {
+	b := Insert("users").
+		Columns("name", "email").
+		Values("John", "john@example.com").
+		Returning("id", "created_at")
+
+	sql, args, err := b.ToSQL()
+	assert.NoError(t, err)
+
+	expectedSQL := "INSERT INTO users (name,email) VALUES (?,?) RETURNING id, created_at"
+	assert.Equal(t, expectedSQL, sql)
+
+	expectedArgs := []any{"John", "john@example.com"}
+	assert.Equal(t, expectedArgs, args)
+}
+
+func TestInsertBuilderReturningWithPlaceholders(t *testing.T) {
+	b := Insert("users").
+		Columns("name").
+		Values("John").
+		Returning("id").
+		PlaceholderFormat(Dollar)
+
+	sql, args, err := b.ToSQL()
+	assert.NoError(t, err)
+
+	expectedSQL := "INSERT INTO users (name) VALUES ($1) RETURNING id"
+	assert.Equal(t, expectedSQL, sql)
+
+	expectedArgs := []any{"John"}
+	assert.Equal(t, expectedArgs, args)
+}
+
+func TestInsertBuilderReturningStar(t *testing.T) {
+	b := Insert("users").
+		Columns("name").
+		Values("John").
+		Returning("*")
+
+	sql, args, err := b.ToSQL()
+	assert.NoError(t, err)
+
+	expectedSQL := "INSERT INTO users (name) VALUES (?) RETURNING *"
+	assert.Equal(t, expectedSQL, sql)
+
+	expectedArgs := []any{"John"}
+	assert.Equal(t, expectedArgs, args)
+}
+
+func TestInsertBuilderReturningWithSuffix(t *testing.T) {
+	b := Insert("users").
+		Columns("name").
+		Values("John").
+		Returning("id").
+		Suffix("-- comment")
+
+	sql, args, err := b.ToSQL()
+	assert.NoError(t, err)
+
+	expectedSQL := "INSERT INTO users (name) VALUES (?) RETURNING id -- comment"
+	assert.Equal(t, expectedSQL, sql)
+
+	expectedArgs := []any{"John"}
+	assert.Equal(t, expectedArgs, args)
+}
+
+func TestInsertBuilderReturningWithOnConflict(t *testing.T) {
+	b := Insert("users").
+		Columns("id", "name").
+		Values(1, "John").
+		OnConflictColumns("id").
+		OnConflictDoNothing().
+		Returning("id")
+
+	sql, args, err := b.ToSQL()
+	assert.NoError(t, err)
+
+	expectedSQL := "INSERT INTO users (id,name) VALUES (?,?) ON CONFLICT (id) DO NOTHING RETURNING id"
+	assert.Equal(t, expectedSQL, sql)
+
+	expectedArgs := []any{1, "John"}
+	assert.Equal(t, expectedArgs, args)
+}

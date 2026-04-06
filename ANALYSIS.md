@@ -1,8 +1,5 @@
 # Squirrel Library — Thorough Analysis
 
-> Generated: April 4, 2026
-> Updated: April 6, 2026 — marked §1.1 (UNION/INTERSECT/EXCEPT) and §1.2 (Upsert) as done
-
 ---
 
 ## 1. Missing Core Features
@@ -21,8 +18,10 @@
 
 > **GitHub [#372](https://github.com/Masterminds/squirrel/issues/372)** — "Upsert/On Conflict support" (opened 2023-12-25). Specifically calls out the impossibility of using the `Suffix` workaround with multi-row inserts. Follow-up to older closed issue #83.
 
-### 1.3 `RETURNING` Clause (First-class)
-PostgreSQL, SQLite (3.35+), and MariaDB all support `RETURNING`. Currently users must use `Suffix("RETURNING id")`, which has no type safety and doesn't participate in placeholder numbering. A dedicated `.Returning("col1", "col2")` method on `InsertBuilder`, `UpdateBuilder`, and `DeleteBuilder` would be a significant improvement.
+### 1.3 ✅ `RETURNING` Clause (First-class) — **DONE**
+~~PostgreSQL, SQLite (3.35+), and MariaDB all support `RETURNING`. Currently users must use `Suffix("RETURNING id")`, which has no type safety and doesn't participate in placeholder numbering. A dedicated `.Returning("col1", "col2")` method on `InsertBuilder`, `UpdateBuilder`, and `DeleteBuilder` would be a significant improvement.~~
+
+**Implemented** (April 2026) via a new `Returning(columns ...string)` builder method on `InsertBuilder`, `UpdateBuilder`, and `DeleteBuilder`. Each builder's data struct gained a `Returning []string` field. The RETURNING clause is emitted after the main statement body (after ON CONFLICT/ON DUPLICATE KEY for INSERT, after OFFSET for UPDATE/DELETE) and before any Suffixes, ensuring correct SQL clause ordering. Multiple `Returning()` calls accumulate columns via `builder.Extend`. Supports single columns, multiple columns, `*`, and works correctly with all placeholder formats (Question, Dollar). Full unit test coverage in `insert_test.go`, `update_test.go`, `delete_test.go` and integration test coverage in `integration/insert_test.go`, `integration/update_test.go`, `integration/delete_test.go` (tested against SQLite; MySQL tests correctly skipped).
 
 > **GitHub [#348](https://github.com/Masterminds/squirrel/issues/348)** — "No way to add options between INTO and VALUES on INSERT" (opened 2022-12-21). MS SQL requires `OUTPUT INSERTED.ID` *between* `INTO` and `VALUES` — neither `Suffix` nor `Prefix` can handle this. A generic mid-query clause mechanism or dedicated `Returning`/`Output` method is needed.
 
@@ -311,7 +310,7 @@ Building an insert incrementally — adding a column+value pair after the initia
 | ⭐ High | Common `Where` interface across builders | [#243](https://github.com/Masterminds/squirrel/issues/243) |
 | ⭐ High | `RemoveOrderBy` / `GetOrderBy` | [#369](https://github.com/Masterminds/squirrel/issues/369) |
 | ⭐ High | `JoinSelect` — join against a subquery | [#241](https://github.com/Masterminds/squirrel/issues/241) |
-| ⭐ High | First-class `RETURNING` clause | [#348](https://github.com/Masterminds/squirrel/issues/348) |
+| ✅ Done | First-class `RETURNING` clause | [#348](https://github.com/Masterminds/squirrel/issues/348) |
 | ⭐ High | Identifier quoting helper | [#328](https://github.com/Masterminds/squirrel/issues/328) |
 | ⭐ High | `NOT`, `EXISTS` / `NOT EXISTS` expression helpers | — |
 | ⭐ Medium | `BETWEEN` expression | [#340](https://github.com/Masterminds/squirrel/issues/340) |

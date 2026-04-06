@@ -104,3 +104,69 @@ func TestUpdateBuilderFromSelect(t *testing.T) {
 		"WHERE employees.account_id = subquery.id"
 	assert.Equal(t, expectedSQL, sql)
 }
+
+func TestUpdateBuilderReturning(t *testing.T) {
+	b := Update("users").
+		Set("name", "John").
+		Where("id = ?", 1).
+		Returning("id", "name")
+
+	sql, args, err := b.ToSQL()
+	assert.NoError(t, err)
+
+	expectedSQL := "UPDATE users SET name = ? WHERE id = ? RETURNING id, name"
+	assert.Equal(t, expectedSQL, sql)
+
+	expectedArgs := []any{"John", 1}
+	assert.Equal(t, expectedArgs, args)
+}
+
+func TestUpdateBuilderReturningWithPlaceholders(t *testing.T) {
+	b := Update("users").
+		Set("name", "John").
+		Where("id = ?", 1).
+		Returning("id").
+		PlaceholderFormat(Dollar)
+
+	sql, args, err := b.ToSQL()
+	assert.NoError(t, err)
+
+	expectedSQL := "UPDATE users SET name = $1 WHERE id = $2 RETURNING id"
+	assert.Equal(t, expectedSQL, sql)
+
+	expectedArgs := []any{"John", 1}
+	assert.Equal(t, expectedArgs, args)
+}
+
+func TestUpdateBuilderReturningStar(t *testing.T) {
+	b := Update("users").
+		Set("name", "John").
+		Where("id = ?", 1).
+		Returning("*")
+
+	sql, args, err := b.ToSQL()
+	assert.NoError(t, err)
+
+	expectedSQL := "UPDATE users SET name = ? WHERE id = ? RETURNING *"
+	assert.Equal(t, expectedSQL, sql)
+
+	expectedArgs := []any{"John", 1}
+	assert.Equal(t, expectedArgs, args)
+}
+
+func TestUpdateBuilderReturningWithSuffix(t *testing.T) {
+	b := Update("users").
+		Set("name", "John").
+		Where("id = ?", 1).
+		Returning("id").
+		Suffix("-- comment")
+
+	sql, args, err := b.ToSQL()
+	assert.NoError(t, err)
+
+	expectedSQL := "UPDATE users SET name = ? WHERE id = ? RETURNING id -- comment"
+	assert.Equal(t, expectedSQL, sql)
+
+	expectedArgs := []any{"John", 1}
+	assert.Equal(t, expectedArgs, args)
+}

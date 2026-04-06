@@ -80,3 +80,78 @@ func TestDeleteWithQuery(t *testing.T) {
 
 	assert.Equal(t, expectedSQL, db.LastQuerySQL)
 }
+
+func TestDeleteBuilderReturning(t *testing.T) {
+	b := Delete("users").
+		Where("id = ?", 1).
+		Returning("id", "name")
+
+	sql, args, err := b.ToSQL()
+	assert.NoError(t, err)
+
+	expectedSQL := "DELETE FROM users WHERE id = ? RETURNING id, name"
+	assert.Equal(t, expectedSQL, sql)
+
+	expectedArgs := []any{1}
+	assert.Equal(t, expectedArgs, args)
+}
+
+func TestDeleteBuilderReturningWithPlaceholders(t *testing.T) {
+	b := Delete("users").
+		Where("id = ?", 1).
+		Returning("id").
+		PlaceholderFormat(Dollar)
+
+	sql, args, err := b.ToSQL()
+	assert.NoError(t, err)
+
+	expectedSQL := "DELETE FROM users WHERE id = $1 RETURNING id"
+	assert.Equal(t, expectedSQL, sql)
+
+	expectedArgs := []any{1}
+	assert.Equal(t, expectedArgs, args)
+}
+
+func TestDeleteBuilderReturningStar(t *testing.T) {
+	b := Delete("users").
+		Where("id = ?", 1).
+		Returning("*")
+
+	sql, args, err := b.ToSQL()
+	assert.NoError(t, err)
+
+	expectedSQL := "DELETE FROM users WHERE id = ? RETURNING *"
+	assert.Equal(t, expectedSQL, sql)
+
+	expectedArgs := []any{1}
+	assert.Equal(t, expectedArgs, args)
+}
+
+func TestDeleteBuilderReturningWithSuffix(t *testing.T) {
+	b := Delete("users").
+		Where("id = ?", 1).
+		Returning("id").
+		Suffix("-- comment")
+
+	sql, args, err := b.ToSQL()
+	assert.NoError(t, err)
+
+	expectedSQL := "DELETE FROM users WHERE id = ? RETURNING id -- comment"
+	assert.Equal(t, expectedSQL, sql)
+
+	expectedArgs := []any{1}
+	assert.Equal(t, expectedArgs, args)
+}
+
+func TestDeleteBuilderReturningWithQuery(t *testing.T) {
+	db := &DBStub{}
+	b := Delete("users").
+		Where("id = ?", 1).
+		Returning("id").
+		RunWith(db)
+
+	expectedSQL := "DELETE FROM users WHERE id = ? RETURNING id"
+	_, err := b.Query()
+	assert.NoError(t, err)
+	assert.Equal(t, expectedSQL, db.LastQuerySQL)
+}
