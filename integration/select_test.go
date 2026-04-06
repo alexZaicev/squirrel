@@ -98,6 +98,29 @@ func TestSelectDistinct(t *testing.T) {
 	assert.Equal(t, []string{"fruit", "pastry", "vegetable"}, vals)
 }
 
+func TestSelectDistinctIdempotent(t *testing.T) {
+	// Arrange — multiple Distinct() calls should produce valid SQL with a
+	// single DISTINCT keyword, not "SELECT DISTINCT DISTINCT ...".
+	q := sb.Select("category").From("sq_items").
+		Where(sqrl.NotEq{"category": nil}).
+		Distinct().
+		Distinct().
+		Distinct().
+		OrderBy("category")
+
+	// Verify the generated SQL contains exactly one DISTINCT.
+	sqlStr, _, err := q.ToSQL()
+	assert.NoError(t, err)
+	assert.Contains(t, sqlStr, "SELECT DISTINCT ")
+	assert.NotContains(t, sqlStr, "DISTINCT DISTINCT")
+
+	// Act — also verify execution succeeds.
+	vals := queryStrings(t, q)
+
+	// Assert
+	assert.Equal(t, []string{"fruit", "pastry", "vegetable"}, vals)
+}
+
 func TestSelectOptions(t *testing.T) {
 	// Arrange — DISTINCT via Options instead of Distinct()
 	q := sb.Select("category").From("sq_items").

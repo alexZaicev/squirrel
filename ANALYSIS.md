@@ -292,11 +292,20 @@ While unlikely to be exploitable in practice today, duplicated security-critical
 
 **Files modified:** `expr.go`, `expr_test.go`, `where_test.go`, `integration/expr_test.go`. Full unit test coverage including `Or` with multi-key `Eq`, `NotEq`, `Lt`/`Gt`, `Between`, mixed multi-key/single-key, `And` with multi-key, `SelectBuilder.Where()` integration, Dollar placeholders, and single-key non-regression. Integration tests cover basic multi-key `Eq` inside `Or`, no-match scenarios, mixed multi-key/single-key, multi-key `Lt`/`Gt`, `NotEq`, and Dollar placeholder correctness.
 
-### 3.2 🔴 HIGH — Multiple `Distinct()` Calls Produce Invalid SQL
+### 3.2 ✅ FIXED — Multiple `Distinct()` Calls Produce Invalid SQL — **DONE**
 
 > **GitHub [#281](https://github.com/Masterminds/squirrel/issues/281)** — "[BUG] Multiple calls to Distinct() result in invalid SQL" (opened 2021-04-13).
 
-`Distinct()` appends `"DISTINCT"` to the Options slice every time it is called. Calling `.Distinct().Distinct()` produces `SELECT DISTINCT DISTINCT ...`, which is invalid SQL. The method should be idempotent — either deduplicate options or use a boolean flag.
+~~`Distinct()` appends `"DISTINCT"` to the Options slice every time it is called. Calling `.Distinct().Distinct()` produces `SELECT DISTINCT DISTINCT ...`, which is invalid SQL. The method should be idempotent — either deduplicate options or use a boolean flag.~~
+
+**Fixed** (April 2026) by replacing the `Options`-based approach with a dedicated `Distinct bool` field on `selectData`. The `Distinct()` method now uses `builder.Set(b, "Distinct", true)` instead of `builder.Extend(b, "Options", ...)`, making it fully idempotent — calling `Distinct()` any number of times always produces a single `DISTINCT` keyword.
+
+**Behavior:**
+- `Select("id").From("t").Distinct().Distinct().Distinct()` → `SELECT DISTINCT id FROM t`
+- `Distinct()` and `Options()` are independent — `Distinct().Options("SQL_NO_CACHE")` → `SELECT DISTINCT SQL_NO_CACHE ...`
+- The `DISTINCT` keyword is emitted before any `Options` in the generated SQL, matching standard SQL syntax
+
+**Files modified:** `select.go`, `select_test.go`, `example_test.go`, `integration/select_test.go`. Unit tests cover idempotent `Distinct()` calls (single, double, triple), `Distinct()` combined with `Options()`, and interaction ordering. Example test demonstrates the idempotent behavior. Integration test verifies that multiple `Distinct()` calls produce valid SQL that executes correctly against a real database.
 
 ### 3.3 🔴 HIGH — `nil` Or/And Clause Silently Produces Wrong WHERE
 
@@ -414,9 +423,9 @@ Building an insert incrementally — adding a column+value pair after the initia
 | 🔴 High | Dollar placeholder misnumbering with subqueries in `Update.Set` | [#326](https://github.com/Masterminds/squirrel/issues/326) | Bug |
 | 🔴 High | Misplaced params with window functions / multiple subqueries | [#351](https://github.com/Masterminds/squirrel/issues/351), [#285](https://github.com/Masterminds/squirrel/issues/285) | Bug |
 | 🔴 High | `nil` Or/And clause silently produces `WHERE (1=0)` | [#382](https://github.com/Masterminds/squirrel/issues/382) | Bug |
-| 🟡 High | Multiple `Distinct()` calls produce invalid SQL | [#281](https://github.com/Masterminds/squirrel/issues/281) | Bug |
 | 🟡 High | `CaseBuilder` rejects non-string `int` values in When/Then | [#388](https://github.com/Masterminds/squirrel/issues/388) | Bug |
 | 🟡 High | Conditional insert columns/values produce invalid SQL | [#336](https://github.com/Masterminds/squirrel/issues/336) | Bug |
+| ✅ Fixed | Multiple `Distinct()` calls produce invalid SQL | [#281](https://github.com/Masterminds/squirrel/issues/281) | Bug |
 | ✅ Fixed | Multi-key `Eq` inside `Or` missing parentheses | [#269](https://github.com/Masterminds/squirrel/issues/269) | Bug |
 | 🟡 Medium | `nil` array in `Eq` produces `(1=0)` instead of `IS NULL` | [#277](https://github.com/Masterminds/squirrel/issues/277) | Bug |
 | 🟡 Medium | `Where()` with raw string + slice arg doesn't expand | [#383](https://github.com/Masterminds/squirrel/issues/383) | Bug |

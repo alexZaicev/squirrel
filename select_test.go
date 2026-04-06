@@ -189,6 +189,20 @@ func TestSelectWithOptions(t *testing.T) {
 	assert.Equal(t, "SELECT DISTINCT SQL_NO_CACHE * FROM foo", sql)
 }
 
+func TestSelectDistinctIdempotent(t *testing.T) {
+	// Multiple Distinct() calls should produce a single DISTINCT keyword.
+	sql, _, err := Select("id").From("foo").Distinct().Distinct().Distinct().ToSQL()
+	assert.NoError(t, err)
+	assert.Equal(t, "SELECT DISTINCT id FROM foo", sql)
+}
+
+func TestSelectDistinctWithOptions(t *testing.T) {
+	// Distinct + Options should not duplicate DISTINCT.
+	sql, _, err := Select("id").From("foo").Distinct().Options("SQL_CALC_FOUND_ROWS").Distinct().ToSQL()
+	assert.NoError(t, err)
+	assert.Equal(t, "SELECT DISTINCT SQL_CALC_FOUND_ROWS id FROM foo", sql)
+}
+
 func TestSelectWithRemoveLimit(t *testing.T) {
 	sql, _, err := Select("*").From("foo").Limit(10).RemoveLimit().ToSQL()
 

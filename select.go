@@ -13,6 +13,7 @@ type selectData struct {
 	PlaceholderFormat PlaceholderFormat
 	RunWith           BaseRunner
 	Prefixes          []Sqlizer
+	Distinct          bool
 	Options           []string
 	Columns           []Sqlizer
 	From              Sqlizer
@@ -79,6 +80,10 @@ func (d *selectData) toSQLRaw() (sqlStr string, args []any, err error) {
 	}
 
 	sql.WriteString("SELECT ")
+
+	if d.Distinct {
+		sql.WriteString("DISTINCT ")
+	}
 
 	if len(d.Options) > 0 {
 		sql.WriteString(strings.Join(d.Options, " "))
@@ -243,9 +248,11 @@ func (b SelectBuilder) PrefixExpr(expr Sqlizer) SelectBuilder {
 	return builder.Append(b, "Prefixes", expr).(SelectBuilder)
 }
 
-// Distinct adds a DISTINCT clause to the query.
+// Distinct adds a DISTINCT clause to the query. Multiple calls are
+// idempotent — calling Distinct() more than once still produces a single
+// DISTINCT keyword in the generated SQL.
 func (b SelectBuilder) Distinct() SelectBuilder {
-	return b.Options("DISTINCT")
+	return builder.Set(b, "Distinct", true).(SelectBuilder)
 }
 
 // Options adds select option to the query.

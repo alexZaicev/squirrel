@@ -126,7 +126,8 @@ The `Placeholders(count int) string` function generates a comma-separated list o
 - `Suffix()` / `SuffixExpr()` — add SQL after the statement
 
 **SelectBuilder** notable methods:
-- `Distinct()`, `Options()` — add SELECT options
+- `Distinct()` — add DISTINCT keyword (idempotent — multiple calls produce a single DISTINCT)
+- `Options()` — add SELECT options (e.g., `SQL_NO_CACHE`)
 - `Columns()`, `Column()`, `RemoveColumns()` — manage result columns
 - `From()`, `FromSelect()` — set FROM clause (supports subqueries)
 - `Join()`, `LeftJoin()`, `RightJoin()`, `InnerJoin()`, `CrossJoin()`, `FullJoin()`, `JoinClause()`

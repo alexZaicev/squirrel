@@ -86,6 +86,12 @@ func ExampleSelectBuilder_Distinct() {
 	// Output: SELECT DISTINCT country FROM users
 }
 
+func ExampleSelectBuilder_Distinct_idempotent() {
+	sql, _, _ := sq.Select("country").Distinct().Distinct().From("users").ToSQL()
+	fmt.Println(sql)
+	// Output: SELECT DISTINCT country FROM users
+}
+
 func ExampleSelectBuilder_FromSelect() {
 	usersByCompany := sq.Select("company", "count(*) as n_users").From("users").GroupBy("company")
 	query := sq.Select("company.id", "company.name", "users_by_company.n_users").
