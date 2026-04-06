@@ -107,6 +107,65 @@ func Except(selects ...SelectBuilder) UnionBuilder {
 	return newUnionBuilder("EXCEPT", selects)
 }
 
+// With creates a new CteBuilder with a single CTE definition.
+//
+// Ex:
+//
+//	With("active_users", Select("id", "name").From("users").Where(Eq{"active": true})).
+//		Statement(Select("*").From("active_users"))
+//	// WITH active_users AS (SELECT id, name FROM users WHERE active = ?) SELECT * FROM active_users
+func With(name string, as Sqlizer) CteBuilder {
+	return CteBuilder(builder.EmptyBuilder).
+		PlaceholderFormat(Question).
+		With(name, as)
+}
+
+// WithRecursive creates a new CteBuilder with a single recursive CTE definition.
+//
+// Ex:
+//
+//	WithRecursive("tree",
+//		Union(
+//			Select("id", "parent_id").From("categories").Where(Eq{"parent_id": nil}),
+//			Select("c.id", "c.parent_id").From("categories c").Join("tree t ON c.parent_id = t.id"),
+//		),
+//	).Statement(Select("*").From("tree"))
+//	// WITH RECURSIVE tree AS (...) SELECT * FROM tree
+func WithRecursive(name string, as Sqlizer) CteBuilder {
+	return CteBuilder(builder.EmptyBuilder).
+		PlaceholderFormat(Question).
+		WithRecursive(name, as)
+}
+
+// WithColumns creates a new CteBuilder with a single CTE definition that has
+// explicit column names.
+//
+// Ex:
+//
+//	WithColumns("cte", []string{"x", "y"}, Select("a", "b").From("t1")).
+//		Statement(Select("x", "y").From("cte"))
+//	// WITH cte (x, y) AS (SELECT a, b FROM t1) SELECT x, y FROM cte
+func WithColumns(name string, columns []string, as Sqlizer) CteBuilder {
+	return CteBuilder(builder.EmptyBuilder).
+		PlaceholderFormat(Question).
+		WithColumns(name, columns, as)
+}
+
+// WithRecursiveColumns creates a new CteBuilder with a single recursive CTE
+// definition that has explicit column names.
+//
+// Ex:
+//
+//	WithRecursiveColumns("cnt", []string{"x"},
+//		Union(Select("1"), Select("x + 1").From("cnt").Where("x < ?", 100)),
+//	).Statement(Select("x").From("cnt"))
+//	// WITH RECURSIVE cnt (x) AS (...) SELECT x FROM cnt
+func WithRecursiveColumns(name string, columns []string, as Sqlizer) CteBuilder {
+	return CteBuilder(builder.EmptyBuilder).
+		PlaceholderFormat(Question).
+		WithRecursiveColumns(name, columns, as)
+}
+
 // Case returns a new CaseBuilder
 // "what" represents case value
 func Case(what ...any) CaseBuilder {

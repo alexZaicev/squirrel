@@ -25,8 +25,19 @@
 
 > **GitHub [#348](https://github.com/Masterminds/squirrel/issues/348)** — "No way to add options between INTO and VALUES on INSERT" (opened 2022-12-21). MS SQL requires `OUTPUT INSERTED.ID` *between* `INTO` and `VALUES` — neither `Suffix` nor `Prefix` can handle this. A generic mid-query clause mechanism or dedicated `Returning`/`Output` method is needed.
 
-### 1.4 Common Table Expressions (CTEs) — `WITH` Clause
-CTEs are standard SQL (SQL:1999) supported by PostgreSQL, MySQL 8+, SQLite 3.8.3+, and SQL Server. The current `Prefix("WITH cte AS (...")` workaround is awkward and error-prone, especially for recursive CTEs or multiple CTEs. A `With` / `WithRecursive` builder would be a major usability gain.
+### 1.4 ✅ Common Table Expressions (CTEs) — `WITH` Clause — **DONE**
+~~CTEs are standard SQL (SQL:1999) supported by PostgreSQL, MySQL 8+, SQLite 3.8.3+, and SQL Server. The current `Prefix("WITH cte AS (...")` workaround is awkward and error-prone, especially for recursive CTEs or multiple CTEs. A `With` / `WithRecursive` builder would be a major usability gain.~~
+
+**Implemented** (April 2026) via a new `CteBuilder` type following the same immutable builder pattern as all other builders. Files added: `cte.go`, `cte_ctx.go`, `cte_test.go`, `cte_ctx_test.go`. Convenience functions `With()`, `WithRecursive()`, `WithColumns()`, `WithRecursiveColumns()` added to `statement.go`. Also added `toSQLRaw()` methods to `InsertBuilder`, `UpdateBuilder`, and `DeleteBuilder` (via `insertData`, `updateData`, `deleteData`) so that nested placeholder handling works correctly for all statement types used as CTE main statements.
+
+**Key features:**
+- **Single and multiple CTEs:** Chain `.With(name, query)` to define multiple CTEs in one `WITH` clause.
+- **Recursive CTEs:** `WithRecursive(name, query)` marks the clause as `WITH RECURSIVE` (SQL standard: RECURSIVE is clause-level).
+- **Column lists:** `WithColumns(name, columns, query)` and `WithRecursiveColumns(name, columns, query)` for `WITH cte(col1, col2) AS (...)` syntax.
+- **Any main statement:** `.Statement(sqlizer)` accepts any `Sqlizer` — `SelectBuilder`, `InsertBuilder`, `UpdateBuilder`, `DeleteBuilder`, `UnionBuilder`, or other `CteBuilder`.
+- **Correct placeholder handling:** Inner CTE queries and the main statement use `nestedToSQL` / `toSQLRaw` to prevent double placeholder replacement. Works correctly with `Dollar`, `Colon`, and `AtP` formats.
+- **Full runner support:** `Exec()`, `Query()`, `QueryRow()`, `Scan()`, and all `Context` variants.
+- **Suffix support:** `.Suffix()` / `.SuffixExpr()` for appending clauses like `FOR UPDATE`.
 
 > **GitHub [#271](https://github.com/Masterminds/squirrel/issues/271)** — "Does squirrel support, or plan to support, common table expressions" (8 comments, opened 2020-12-31). Long-standing request with community discussion. Users resort to fragile `Prefix` workarounds.
 
@@ -233,7 +244,7 @@ Building an insert incrementally — adding a column+value pair after the initia
 |-------|-------|-----------|
 | **[#308](https://github.com/Masterminds/squirrel/issues/308)** | UNION support | Standard SQL, 11 comments, highest community demand. See §1.1. |
 | **[#372](https://github.com/Masterminds/squirrel/issues/372)** | Upsert / ON CONFLICT | Essential write pattern, impossible via Suffix for multi-row. See §1.2. |
-| **[#271](https://github.com/Masterminds/squirrel/issues/271)** | CTE / WITH clause | Standard SQL:1999, 8 comments. See §1.4. |
+| **[#271](https://github.com/Masterminds/squirrel/issues/271)** | ✅ CTE / WITH clause | Standard SQL:1999, 8 comments. See §1.4. **Done.** |
 | **[#355](https://github.com/Masterminds/squirrel/issues/355)** | Parameterized LIMIT/OFFSET | Defeats prepared-stmt caching. See §1.11. |
 | **[#299](https://github.com/Masterminds/squirrel/issues/299)** / **[#258](https://github.com/Masterminds/squirrel/issues/258)** | Subquery in WHERE IN | 12 comments combined. See §1.5. |
 | **[#257](https://github.com/Masterminds/squirrel/issues/257)** | JOIN support in DELETE/UPDATE | MySQL DELETE...JOIN and UPDATE...JOIN are common patterns. Currently no `Join()` method on `DeleteBuilder`. |
@@ -303,7 +314,7 @@ Building an insert incrementally — adding a column+value pair after the initia
 |----------|-------|--------|
 | ✅ Done | `UNION` / `UNION ALL` / `INTERSECT` / `EXCEPT` | [#308](https://github.com/Masterminds/squirrel/issues/308) |
 | ✅ Done | Upsert (`ON CONFLICT` / `ON DUPLICATE KEY UPDATE`) | [#372](https://github.com/Masterminds/squirrel/issues/372) |
-| ⭐ High | CTE (`WITH` / `WITH RECURSIVE`) builder | [#271](https://github.com/Masterminds/squirrel/issues/271) |
+| ✅ Done | CTE (`WITH` / `WITH RECURSIVE`) builder | [#271](https://github.com/Masterminds/squirrel/issues/271) |
 | ⭐ High | Parameterized `LIMIT` / `OFFSET` | [#355](https://github.com/Masterminds/squirrel/issues/355) |
 | ⭐ High | Subquery in WHERE IN / expression position | [#299](https://github.com/Masterminds/squirrel/issues/299), [#258](https://github.com/Masterminds/squirrel/issues/258) |
 | ⭐ High | JOIN in DELETE / UPDATE builders | [#257](https://github.com/Masterminds/squirrel/issues/257) |
