@@ -403,6 +403,66 @@ func (gtOrEq GtOrEq) ToSQL() (sql string, args []any, err error) {
 	return Lt(gtOrEq).toSQL(true, true)
 }
 
+// Between is syntactic sugar for use with Where/Having methods.
+// Values must be two-element arrays: [2]interface{}{lo, hi}.
+//
+// Ex:
+//
+//	.Where(Between{"age": [2]interface{}{18, 65}})  // age BETWEEN ? AND ?
+type Between map[string]any
+
+func (b Between) toSQL(opr string) (sql string, args []any, err error) {
+	if len(b) == 0 {
+		sql = sqlTrue
+		return
+	}
+
+	var exprs []string
+
+	sortedKeys := getSortedKeys(b)
+	for _, key := range sortedKeys {
+		val := b[key]
+		if val == nil {
+			err = fmt.Errorf("cannot use null with between operators")
+			return
+		}
+
+		r := reflect.ValueOf(val)
+		switch r.Kind() {
+		case reflect.Array, reflect.Slice:
+			if r.Len() != 2 {
+				err = fmt.Errorf("between value for %q must have exactly 2 elements, got %d", key, r.Len())
+				return
+			}
+			lo := r.Index(0).Interface()
+			hi := r.Index(1).Interface()
+			exprs = append(exprs, fmt.Sprintf("%s %s ? AND ?", key, opr))
+			args = append(args, lo, hi)
+		default:
+			err = fmt.Errorf("between value for %q must be a two-element array or slice", key)
+			return
+		}
+	}
+	sql = strings.Join(exprs, " AND ")
+	return
+}
+
+func (b Between) ToSQL() (sql string, args []any, err error) {
+	return b.toSQL("BETWEEN")
+}
+
+// NotBetween is syntactic sugar for use with Where/Having methods.
+// Values must be two-element arrays: [2]interface{}{lo, hi}.
+//
+// Ex:
+//
+//	.Where(NotBetween{"age": [2]interface{}{18, 65}})  // age NOT BETWEEN ? AND ?
+type NotBetween Between
+
+func (nb NotBetween) ToSQL() (sql string, args []any, err error) {
+	return Between(nb).toSQL("NOT BETWEEN")
+}
+
 type conj []Sqlizer
 
 func (c conj) join(sep, defaultExpr string) (sql string, args []any, err error) {
@@ -438,6 +498,76 @@ type Or conj
 
 func (o Or) ToSQL() (string, []any, error) {
 	return conj(o).join(" OR ", sqlFalse)
+}
+
+// Not negates the given Sqlizer condition.
+//
+// Ex:
+//
+//	sq.Not{sq.Eq{"active": true}}    → NOT (active = ?)
+//	sq.Not{sq.Or{sq.Eq{"a": 1}, sq.Eq{"b": 2}}} → NOT ((a = ? OR b = ?))
+type Not struct {
+	Cond Sqlizer
+}
+
+func (n Not) ToSQL() (sql string, args []any, err error) {
+	if n.Cond == nil {
+		return sqlTrue, []any{}, nil
+	}
+	sql, args, err = nestedToSQL(n.Cond)
+	if err != nil {
+		return
+	}
+	if sql == "" {
+		return sqlTrue, []any{}, nil
+	}
+	sql = fmt.Sprintf("NOT (%s)", sql)
+	return
+}
+
+// existsExpr represents an EXISTS or NOT EXISTS subquery condition.
+type existsExpr struct {
+	sub Sqlizer
+	not bool
+}
+
+func (e existsExpr) ToSQL() (sql string, args []any, err error) {
+	if e.sub == nil {
+		err = fmt.Errorf("exists operator requires a non-nil subquery")
+		return
+	}
+	sql, args, err = nestedToSQL(e.sub)
+	if err != nil {
+		return
+	}
+	if e.not {
+		sql = fmt.Sprintf("NOT EXISTS (%s)", sql)
+	} else {
+		sql = fmt.Sprintf("EXISTS (%s)", sql)
+	}
+	return
+}
+
+// Exists builds an EXISTS (subquery) expression for use with Where/Having methods.
+//
+// Ex:
+//
+//	sub := sq.Select("1").From("orders").Where("orders.user_id = users.id")
+//	sq.Select("*").From("users").Where(sq.Exists(sub))
+//	// SELECT * FROM users WHERE EXISTS (SELECT 1 FROM orders WHERE orders.user_id = users.id)
+func Exists(subquery Sqlizer) Sqlizer {
+	return existsExpr{sub: subquery}
+}
+
+// NotExists builds a NOT EXISTS (subquery) expression for use with Where/Having methods.
+//
+// Ex:
+//
+//	sub := sq.Select("1").From("orders").Where("orders.user_id = users.id")
+//	sq.Select("*").From("users").Where(sq.NotExists(sub))
+//	// SELECT * FROM users WHERE NOT EXISTS (SELECT 1 FROM orders WHERE orders.user_id = users.id)
+func NotExists(subquery Sqlizer) Sqlizer {
+	return existsExpr{sub: subquery, not: true}
 }
 
 func getSortedKeys(exp map[string]any) []string {

@@ -1130,3 +1130,574 @@ func TestExprSubqueryPlaceholders(t *testing.T) {
 		assert.Equal(t, []interface{}{"vegetable"}, args)
 	})
 }
+
+// ---------------------------------------------------------------------------
+// Not
+// ---------------------------------------------------------------------------
+
+func TestExprNot(t *testing.T) {
+	t.Run("NotEq", func(t *testing.T) {
+		// Arrange — NOT (category = 'fruit') should exclude fruit items
+		q := sb.Select("name").From("sq_items").
+			Where(sqrl.Not{Cond: sqrl.Eq{"category": "fruit"}}).
+			OrderBy("id")
+
+		// Act
+		names := queryStrings(t, q)
+
+		// Assert — carrot, donut, eggplant (mystery has NULL category, excluded by NOT (category = 'fruit'))
+		assert.Equal(t, []string{"carrot", "donut", "eggplant"}, names)
+	})
+
+	t.Run("NotLike", func(t *testing.T) {
+		// Arrange — NOT (name LIKE 'a%') should exclude apple
+		q := sb.Select("name").From("sq_items").
+			Where(sqrl.Not{Cond: sqrl.Like{"name": "a%"}}).
+			OrderBy("id")
+
+		// Act
+		names := queryStrings(t, q)
+
+		// Assert
+		assert.Equal(t, []string{"banana", "carrot", "donut", "eggplant", "mystery"}, names)
+	})
+
+	t.Run("NotOr", func(t *testing.T) {
+		// Arrange — NOT (category = 'fruit' OR category = 'pastry')
+		q := sb.Select("name").From("sq_items").
+			Where(sqrl.Not{Cond: sqrl.Or{
+				sqrl.Eq{"category": "fruit"},
+				sqrl.Eq{"category": "pastry"},
+			}}).
+			OrderBy("id")
+
+		// Act
+		names := queryStrings(t, q)
+
+		// Assert — only vegetables remain (mystery has NULL, excluded by NOT)
+		assert.Equal(t, []string{"carrot", "eggplant"}, names)
+	})
+
+	t.Run("NotCombinedWithAnd", func(t *testing.T) {
+		// Arrange — category = 'fruit' AND NOT (price > 75)
+		q := sb.Select("name").From("sq_items").
+			Where(sqrl.And{
+				sqrl.Eq{"category": "fruit"},
+				sqrl.Not{Cond: sqrl.Gt{"price": 75}},
+			})
+
+		// Act
+		names := queryStrings(t, q)
+
+		// Assert — banana (50) is the only fruit with price <= 75
+		assert.Equal(t, []string{"banana"}, names)
+	})
+
+	t.Run("DoubleNot", func(t *testing.T) {
+		// Arrange — NOT (NOT (category = 'pastry')) is equivalent to category = 'pastry'
+		q := sb.Select("name").From("sq_items").
+			Where(sqrl.Not{Cond: sqrl.Not{Cond: sqrl.Eq{"category": "pastry"}}})
+
+		// Act
+		names := queryStrings(t, q)
+
+		// Assert
+		assert.Equal(t, []string{"donut"}, names)
+	})
+
+	t.Run("NotWithSubquery", func(t *testing.T) {
+		// Arrange — NOT (id IN (SELECT id FROM sq_items WHERE category = 'fruit'))
+		sub := sqrl.Select("id").From("sq_items").Where(sqrl.Eq{"category": "fruit"})
+		q := sb.Select("name").From("sq_items").
+			Where(sqrl.Not{Cond: sqrl.Eq{"id": sub}}).
+			OrderBy("id")
+
+		// Act
+		names := queryStrings(t, q)
+
+		// Assert — all non-fruit items
+		assert.Equal(t, []string{"carrot", "donut", "eggplant", "mystery"}, names)
+	})
+
+	t.Run("NotNilCondProducesTrue", func(t *testing.T) {
+		// Arrange — Not with nil condition should produce (1=1), returning all rows
+		q := sb.Select("name").From("sq_items").
+			Where(sqrl.Not{Cond: nil}).
+			OrderBy("id")
+
+		// Act
+		names := queryStrings(t, q)
+
+		// Assert — all 6 items
+		assert.Len(t, names, 6)
+	})
+
+	t.Run("NotToSQLDollar", func(t *testing.T) {
+		// Arrange — verify Not produces correct Dollar placeholders
+		q := sqrl.Select("name").From("sq_items").
+			Where(sqrl.Eq{"price": 100}).
+			Where(sqrl.Not{Cond: sqrl.Eq{"category": "pastry"}}).
+			PlaceholderFormat(sqrl.Dollar)
+
+		// Act
+		sqlStr, args, err := q.ToSQL()
+
+		// Assert
+		require.NoError(t, err)
+		assert.Equal(t, "SELECT name FROM sq_items WHERE price = $1 AND NOT (category = $2)", sqlStr)
+		assert.Equal(t, []interface{}{100, "pastry"}, args)
+	})
+
+	t.Run("NotWithBetween", func(t *testing.T) {
+		// Arrange — NOT (price BETWEEN 75 AND 150)
+		q := sb.Select("name").From("sq_items").
+			Where(sqrl.Not{Cond: sqrl.Between{"price": [2]interface{}{75, 150}}}).
+			OrderBy("id")
+
+		// Act
+		names := queryStrings(t, q)
+
+		// Assert — banana(50), donut(200) — same result as NotBetween
+		assert.Equal(t, []string{"banana", "donut"}, names)
+	})
+
+	t.Run("NotWithGt", func(t *testing.T) {
+		// Arrange — NOT (price > 100) keeps items with price <= 100
+		q := sb.Select("name").From("sq_items").
+			Where(sqrl.Not{Cond: sqrl.Gt{"price": 100}}).
+			OrderBy("id")
+
+		// Act
+		names := queryStrings(t, q)
+
+		// Assert — apple(100), banana(50), carrot(75), mystery(99) — NOT(price > 100) means price <= 100
+		assert.Equal(t, []string{"apple", "banana", "carrot", "mystery"}, names)
+	})
+
+	t.Run("NotWithExists", func(t *testing.T) {
+		// Arrange — Not{Exists(sub)} should produce same results as NotExists(sub)
+		sub := sqrl.Select("1").From("sq_items").Where("sq_items.category = sq_categories.name")
+		q := sb.Select("name").From("sq_categories").
+			Where(sqrl.Not{Cond: sqrl.Exists(sub)}).
+			OrderBy("name")
+
+		// Act
+		names := queryStrings(t, q)
+
+		// Assert — only dairy has no items (same as NotExists)
+		assert.Equal(t, []string{"dairy"}, names)
+	})
+
+	t.Run("NotWithNotBetween", func(t *testing.T) {
+		// Arrange — NOT (price NOT BETWEEN 75 AND 150) → price BETWEEN 75 AND 150
+		q := sb.Select("name").From("sq_items").
+			Where(sqrl.Not{Cond: sqrl.NotBetween{"price": [2]interface{}{75, 150}}}).
+			OrderBy("id")
+
+		// Act
+		names := queryStrings(t, q)
+
+		// Assert — apple(100,id=1), carrot(75,id=3), eggplant(150,id=5), mystery(99,id=6) — same as Between{75,150}
+		assert.Equal(t, []string{"apple", "carrot", "eggplant", "mystery"}, names)
+	})
+}
+
+// ---------------------------------------------------------------------------
+// Between / NotBetween
+// ---------------------------------------------------------------------------
+
+func TestExprBetween(t *testing.T) {
+	t.Run("SingleColumn", func(t *testing.T) {
+		// Arrange — price BETWEEN 75 AND 150
+		q := sb.Select("name").From("sq_items").
+			Where(sqrl.Between{"price": [2]interface{}{75, 150}}).
+			OrderBy("id")
+
+		// Act
+		names := queryStrings(t, q)
+
+		// Assert — apple(100,id=1), carrot(75,id=3), eggplant(150,id=5), mystery(99,id=6)
+		assert.Equal(t, []string{"apple", "carrot", "eggplant", "mystery"}, names)
+	})
+
+	t.Run("ExcludesBoundaryCorrectly", func(t *testing.T) {
+		// Arrange — price BETWEEN 50 AND 99 (BETWEEN is inclusive on both ends)
+		q := sb.Select("name").From("sq_items").
+			Where(sqrl.Between{"price": [2]interface{}{50, 99}}).
+			OrderBy("id")
+
+		// Act
+		names := queryStrings(t, q)
+
+		// Assert — banana(50), carrot(75), mystery(99) — all inclusive
+		assert.Equal(t, []string{"banana", "carrot", "mystery"}, names)
+	})
+
+	t.Run("NotBetween", func(t *testing.T) {
+		// Arrange — price NOT BETWEEN 75 AND 150
+		q := sb.Select("name").From("sq_items").
+			Where(sqrl.NotBetween{"price": [2]interface{}{75, 150}}).
+			OrderBy("id")
+
+		// Act
+		names := queryStrings(t, q)
+
+		// Assert — banana(50), donut(200)
+		assert.Equal(t, []string{"banana", "donut"}, names)
+	})
+
+	t.Run("CombinedWithEq", func(t *testing.T) {
+		// Arrange — category = 'fruit' AND price BETWEEN 50 AND 80
+		q := sb.Select("name").From("sq_items").
+			Where(sqrl.And{
+				sqrl.Eq{"category": "fruit"},
+				sqrl.Between{"price": [2]interface{}{50, 80}},
+			}).OrderBy("id")
+
+		// Act
+		names := queryStrings(t, q)
+
+		// Assert — banana (price 50, fruit)
+		assert.Equal(t, []string{"banana"}, names)
+	})
+
+	t.Run("BetweenWithStringValues", func(t *testing.T) {
+		// Arrange — name BETWEEN 'b' AND 'd' (lexicographic)
+		q := sb.Select("name").From("sq_items").
+			Where(sqrl.Between{"name": [2]interface{}{"b", "d"}}).
+			OrderBy("id")
+
+		// Act
+		names := queryStrings(t, q)
+
+		// Assert — banana, carrot (lexicographically between 'b' and 'd')
+		assert.Equal(t, []string{"banana", "carrot"}, names)
+	})
+
+	t.Run("BetweenNoMatch", func(t *testing.T) {
+		// Arrange — price BETWEEN 300 AND 400 (no items in range)
+		q := sb.Select("name").From("sq_items").
+			Where(sqrl.Between{"price": [2]interface{}{300, 400}})
+
+		// Act
+		names := queryStrings(t, q)
+
+		// Assert — empty
+		assert.Empty(t, names)
+	})
+
+	t.Run("MultipleKeys", func(t *testing.T) {
+		// Arrange — id BETWEEN 2 AND 5 AND price BETWEEN 50 AND 100
+		q := sb.Select("name").From("sq_items").
+			Where(sqrl.Between{"id": [2]interface{}{2, 5}, "price": [2]interface{}{50, 100}}).
+			OrderBy("id")
+
+		// Act
+		names := queryStrings(t, q)
+
+		// Assert — banana(id=2,price=50), carrot(id=3,price=75)
+		assert.Equal(t, []string{"banana", "carrot"}, names)
+	})
+
+	t.Run("ToSQLDollar", func(t *testing.T) {
+		// Arrange — verify Between produces correct Dollar placeholders
+		q := sqrl.Select("name").From("sq_items").
+			Where(sqrl.Eq{"category": "fruit"}).
+			Where(sqrl.Between{"price": [2]interface{}{50, 100}}).
+			PlaceholderFormat(sqrl.Dollar)
+
+		// Act
+		sqlStr, args, err := q.ToSQL()
+
+		// Assert
+		require.NoError(t, err)
+		assert.Equal(t, "SELECT name FROM sq_items WHERE category = $1 AND price BETWEEN $2 AND $3", sqlStr)
+		assert.Equal(t, []interface{}{"fruit", 50, 100}, args)
+	})
+
+	t.Run("NotBetweenToSQLDollar", func(t *testing.T) {
+		// Arrange — verify NotBetween produces correct Dollar placeholders
+		q := sqrl.Select("name").From("sq_items").
+			Where(sqrl.NotBetween{"price": [2]interface{}{50, 100}}).
+			PlaceholderFormat(sqrl.Dollar)
+
+		// Act
+		sqlStr, args, err := q.ToSQL()
+
+		// Assert
+		require.NoError(t, err)
+		assert.Equal(t, "SELECT name FROM sq_items WHERE price NOT BETWEEN $1 AND $2", sqlStr)
+		assert.Equal(t, []interface{}{50, 100}, args)
+	})
+
+	t.Run("BetweenCombinedWithOr", func(t *testing.T) {
+		// Arrange — price BETWEEN 50 AND 60 OR price BETWEEN 190 AND 210
+		q := sb.Select("name").From("sq_items").
+			Where(sqrl.Or{
+				sqrl.Between{"price": [2]interface{}{50, 60}},
+				sqrl.Between{"price": [2]interface{}{190, 210}},
+			}).
+			OrderBy("id")
+
+		// Act
+		names := queryStrings(t, q)
+
+		// Assert — banana(50), donut(200)
+		assert.Equal(t, []string{"banana", "donut"}, names)
+	})
+
+	t.Run("BetweenCombinedWithNot", func(t *testing.T) {
+		// Arrange — NOT (price BETWEEN 75 AND 150) — should match NotBetween
+		q := sb.Select("name").From("sq_items").
+			Where(sqrl.Not{Cond: sqrl.Between{"price": [2]interface{}{75, 150}}}).
+			OrderBy("id")
+
+		// Act
+		names := queryStrings(t, q)
+
+		// Assert — banana(50), donut(200)
+		assert.Equal(t, []string{"banana", "donut"}, names)
+	})
+
+	t.Run("BetweenSameLoAndHi", func(t *testing.T) {
+		// Arrange — price BETWEEN 100 AND 100 → exact match for price = 100
+		q := sb.Select("name").From("sq_items").
+			Where(sqrl.Between{"price": [2]interface{}{100, 100}})
+
+		// Act
+		names := queryStrings(t, q)
+
+		// Assert — only apple (price = 100)
+		assert.Equal(t, []string{"apple"}, names)
+	})
+
+	t.Run("NotBetweenAllInRange", func(t *testing.T) {
+		// Arrange — price NOT BETWEEN 1 AND 1000 — all items have price in [1, 1000]
+		q := sb.Select("name").From("sq_items").
+			Where(sqrl.NotBetween{"price": [2]interface{}{1, 1000}})
+
+		// Act
+		names := queryStrings(t, q)
+
+		// Assert — empty: all items have prices in [50, 200]
+		assert.Empty(t, names)
+	})
+}
+
+// ---------------------------------------------------------------------------
+// Exists / NotExists
+// ---------------------------------------------------------------------------
+
+func TestExprExists(t *testing.T) {
+	t.Run("ExistsCorrelated", func(t *testing.T) {
+		// Arrange — select categories that have at least one item
+		sub := sqrl.Select("1").From("sq_items").Where("sq_items.category = sq_categories.name")
+		q := sb.Select("name").From("sq_categories").
+			Where(sqrl.Exists(sub)).
+			OrderBy("name")
+
+		// Act
+		names := queryStrings(t, q)
+
+		// Assert — fruit, pastry, vegetable have items; dairy does not
+		assert.Equal(t, []string{"fruit", "pastry", "vegetable"}, names)
+	})
+
+	t.Run("NotExistsCorrelated", func(t *testing.T) {
+		// Arrange — select categories that have NO items
+		sub := sqrl.Select("1").From("sq_items").Where("sq_items.category = sq_categories.name")
+		q := sb.Select("name").From("sq_categories").
+			Where(sqrl.NotExists(sub)).
+			OrderBy("name")
+
+		// Act
+		names := queryStrings(t, q)
+
+		// Assert — only dairy has no items
+		assert.Equal(t, []string{"dairy"}, names)
+	})
+
+	t.Run("ExistsWithArgs", func(t *testing.T) {
+		// Arrange — categories that have items with price > 100
+		sub := sqrl.Select("1").From("sq_items").
+			Where("sq_items.category = sq_categories.name").
+			Where(sqrl.Gt{"price": 100})
+		q := sb.Select("name").From("sq_categories").
+			Where(sqrl.Exists(sub)).
+			OrderBy("name")
+
+		// Act
+		names := queryStrings(t, q)
+
+		// Assert — pastry (200) and vegetable (150)
+		assert.Equal(t, []string{"pastry", "vegetable"}, names)
+	})
+
+	t.Run("ExistsCombinedWithEq", func(t *testing.T) {
+		// Arrange — items in 'fruit' category that also exist in categories table
+		sub := sqrl.Select("1").From("sq_categories").Where("sq_categories.name = sq_items.category")
+		q := sb.Select("name").From("sq_items").
+			Where(sqrl.And{
+				sqrl.Eq{"category": "fruit"},
+				sqrl.Exists(sub),
+			}).
+			OrderBy("id")
+
+		// Act
+		names := queryStrings(t, q)
+
+		// Assert — apple and banana
+		assert.Equal(t, []string{"apple", "banana"}, names)
+	})
+
+	t.Run("NotExistsCombinedWithCondition", func(t *testing.T) {
+		// Arrange — items whose category does NOT exist in categories table
+		sub := sqrl.Select("1").From("sq_categories").Where("sq_categories.name = sq_items.category")
+		q := sb.Select("name").From("sq_items").
+			Where(sqrl.NotExists(sub)).
+			OrderBy("id")
+
+		// Act
+		names := queryStrings(t, q)
+
+		// Assert — mystery has NULL category, so no matching row in sq_categories
+		assert.Equal(t, []string{"mystery"}, names)
+	})
+
+	t.Run("ExistsToSQLDollar", func(t *testing.T) {
+		// Arrange — verify Exists produces correct Dollar placeholders
+		sub := sqrl.Select("1").From("sq_items").Where(sqrl.Eq{"category": "fruit"})
+		q := sqrl.Select("name").From("sq_categories").
+			Where(sqrl.Eq{"description": "Fresh fruits"}).
+			Where(sqrl.Exists(sub)).
+			PlaceholderFormat(sqrl.Dollar)
+
+		// Act
+		sqlStr, args, err := q.ToSQL()
+
+		// Assert
+		require.NoError(t, err)
+		assert.Equal(t, "SELECT name FROM sq_categories WHERE description = $1 AND EXISTS (SELECT 1 FROM sq_items WHERE category = $2)", sqlStr)
+		assert.Equal(t, []interface{}{"Fresh fruits", "fruit"}, args)
+	})
+
+	t.Run("NotExistsToSQLDollar", func(t *testing.T) {
+		// Arrange — verify NotExists produces correct Dollar placeholders
+		sub := sqrl.Select("1").From("sq_items").Where(sqrl.Eq{"category": "dairy"})
+		q := sqrl.Select("name").From("sq_categories").
+			Where(sqrl.NotExists(sub)).
+			PlaceholderFormat(sqrl.Dollar)
+
+		// Act
+		sqlStr, args, err := q.ToSQL()
+
+		// Assert
+		require.NoError(t, err)
+		assert.Equal(t, "SELECT name FROM sq_categories WHERE NOT EXISTS (SELECT 1 FROM sq_items WHERE category = $1)", sqlStr)
+		assert.Equal(t, []interface{}{"dairy"}, args)
+	})
+
+	t.Run("ExistsCombinedWithOr", func(t *testing.T) {
+		// Arrange — category = 'dairy' OR EXISTS (items with price > 100 in this category)
+		sub := sqrl.Select("1").From("sq_items").
+			Where("sq_items.category = sq_categories.name").
+			Where(sqrl.Gt{"price": 100})
+		q := sb.Select("name").From("sq_categories").
+			Where(sqrl.Or{
+				sqrl.Eq{"name": "dairy"},
+				sqrl.Exists(sub),
+			}).
+			OrderBy("name")
+
+		// Act
+		names := queryStrings(t, q)
+
+		// Assert — dairy (from the Eq) + pastry(200) + vegetable(150) from EXISTS
+		assert.Equal(t, []string{"dairy", "pastry", "vegetable"}, names)
+	})
+
+	t.Run("NotExistsEquivalentToNotExists", func(t *testing.T) {
+		// Arrange — Not{Exists(sub)} should produce the same rows as NotExists(sub)
+		sub := sqrl.Select("1").From("sq_items").Where("sq_items.category = sq_categories.name")
+
+		q1 := sb.Select("name").From("sq_categories").
+			Where(sqrl.Not{Cond: sqrl.Exists(sub)}).
+			OrderBy("name")
+		q2 := sb.Select("name").From("sq_categories").
+			Where(sqrl.NotExists(sub)).
+			OrderBy("name")
+
+		// Act
+		names1 := queryStrings(t, q1)
+		names2 := queryStrings(t, q2)
+
+		// Assert — both should return the same results
+		assert.Equal(t, names1, names2)
+		assert.Equal(t, []string{"dairy"}, names1)
+	})
+
+	t.Run("ExistsNoMatchNonCorrelated", func(t *testing.T) {
+		// Arrange — EXISTS with a subquery that returns no rows (non-correlated)
+		sub := sqrl.Select("1").From("sq_items").Where(sqrl.Eq{"category": "nonexistent"})
+		q := sb.Select("name").From("sq_categories").
+			Where(sqrl.Exists(sub)).
+			OrderBy("name")
+
+		// Act
+		names := queryStrings(t, q)
+
+		// Assert — no category matches because subquery returns empty
+		assert.Empty(t, names)
+	})
+
+	t.Run("ExistsAllMatchNonCorrelated", func(t *testing.T) {
+		// Arrange — EXISTS with a subquery that always returns rows (non-correlated)
+		sub := sqrl.Select("1").From("sq_items").Where(sqrl.Eq{"category": "fruit"})
+		q := sb.Select("name").From("sq_categories").
+			Where(sqrl.Exists(sub)).
+			OrderBy("name")
+
+		// Act
+		names := queryStrings(t, q)
+
+		// Assert — all categories returned because subquery always has rows
+		assert.Equal(t, []string{"dairy", "fruit", "pastry", "vegetable"}, names)
+	})
+
+	t.Run("ExistsWithBetweenInSubquery", func(t *testing.T) {
+		// Arrange — cross-feature: categories that have items with price BETWEEN 50 AND 80
+		sub := sqrl.Select("1").From("sq_items").
+			Where("sq_items.category = sq_categories.name").
+			Where(sqrl.Between{"price": [2]interface{}{50, 80}})
+		q := sb.Select("name").From("sq_categories").
+			Where(sqrl.Exists(sub)).
+			OrderBy("name")
+
+		// Act
+		names := queryStrings(t, q)
+
+		// Assert — fruit(banana=50) and vegetable(carrot=75)
+		assert.Equal(t, []string{"fruit", "vegetable"}, names)
+	})
+
+	t.Run("NotExistsCombinedWithOr", func(t *testing.T) {
+		// Arrange — name = 'fruit' OR NOT EXISTS(items with price > 100 in category)
+		sub := sqrl.Select("1").From("sq_items").
+			Where("sq_items.category = sq_categories.name").
+			Where(sqrl.Gt{"price": 100})
+		q := sb.Select("name").From("sq_categories").
+			Where(sqrl.Or{
+				sqrl.Eq{"name": "fruit"},
+				sqrl.NotExists(sub),
+			}).
+			OrderBy("name")
+
+		// Act
+		names := queryStrings(t, q)
+
+		// Assert — fruit (from Eq) + dairy (no items) + fruit (no items > 100)
+		//          fruit already counted; dairy has no items so NOT EXISTS is true;
+		//          fruit has items but none > 100 so NOT EXISTS is true too
+		assert.Equal(t, []string{"dairy", "fruit"}, names)
+	})
+}
