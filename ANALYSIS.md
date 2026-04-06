@@ -391,11 +391,33 @@ The fix replaces `vs.ToSQL()` with `nestedToSQL(vs)` in the SET clause handling,
 
 **Files modified:** `part.go`, `case_test.go`, `integration/case_test.go`. Unit tests cover int, float64, bool, and mixed non-string values in WHEN, THEN, and ELSE positions. Integration tests verify correct query execution against real databases with int THEN/ELSE values, int WHEN values, and mixed non-string values across multiple WHEN clauses.
 
-### 3.7 🟡 HIGH — Conditional Insert Columns/Values Produce Invalid SQL
+### 3.7 ✅ FIXED — Conditional Insert Columns/Values Produce Invalid SQL — **DONE**
 
 > **GitHub [#336](https://github.com/Masterminds/squirrel/issues/336)** — "Conditional insert column/value results in invalid SQL" (opened 2022-10-05).
 
-Building an insert incrementally — adding a column+value pair after the initial `Columns(...).Values(...)` — produces separate value groups: `VALUES ($1,$2),($3)` instead of `VALUES ($1,$2,$3)`. The builder treats each `Values()` call as a new row, making conditional column addition impossible without pre-building the complete slices.
+~~Building an insert incrementally — adding a column+value pair after the initial `Columns(...).Values(...)` — produces separate value groups: `VALUES ($1,$2),($3)` instead of `VALUES ($1,$2,$3)`. The builder treats each `Values()` call as a new row, making conditional column addition impossible without pre-building the complete slices.~~
+
+**Fixed** (April 2026) by adding a new `SetColumn(column string, value interface{})` method to `InsertBuilder`. Unlike `Values()` which always appends a new row, `SetColumn` adds a column name and appends the corresponding value to every existing row. If no rows exist yet, a new single-value row is created. This enables conditional, incremental column/value building.
+
+**Examples now work:**
+```go
+// Conditional column building — the core use case from #336
+q := sq.Insert("test").SetColumn("a", 1).SetColumn("b", 2)
+if needC {
+    q = q.SetColumn("c", 3)
+}
+// INSERT INTO test (a,b,c) VALUES (?,?,?)  — single row, NOT VALUES (?,?),(?)
+```
+
+**Behavior:**
+- `SetColumn("col", val)` with no existing rows → creates `VALUES (val)`
+- `SetColumn("col", val)` with one existing row → appends `val` to that row
+- `SetColumn("col", val)` with multiple existing rows → appends `val` to each row (useful for adding a constant column to a multi-row insert)
+- `SetColumn` can be mixed with `Columns().Values()` — `Columns("a","b").Values(1,2).SetColumn("c",3)` → `VALUES (?,?,?)`
+- `SetColumn` values can be `Sqlizer` (e.g., `Expr(...)` subqueries)
+- `SafeSetColumn(Ident, interface{})` — safe counterpart accepting `Ident` for dynamic column names from user input
+
+**Files modified:** `insert.go`, `insert_test.go`, `integration/insert_test.go`. Unit tests cover: basic incremental building, conditional addition (true and false paths), mixing with `Columns().Values()`, multi-row append, Dollar placeholder correctness, Sqlizer values, ON CONFLICT composition, RETURNING composition, single column, nil values, and `SafeSetColumn`. Integration tests (SQLite) cover: basic insert, conditional insert, skipped condition, mixed with Columns/Values, multi-row append, null values, Dollar placeholder SQL generation, and RETURNING with SetColumn.
 
 ### 3.8 🟡 MEDIUM — `nil` Array in `Eq` Produces `(1=0)` Instead of `IS NULL`
 
@@ -482,7 +504,7 @@ Building an insert incrementally — adding a column+value pair after the initia
 | ✅ Fixed | Misplaced params with window functions / multiple subqueries | [#351](https://github.com/Masterminds/squirrel/issues/351), [#285](https://github.com/Masterminds/squirrel/issues/285) | Bug |
 | ✅ Fixed | `nil` Or/And clause silently produces `WHERE (1=0)` | [#382](https://github.com/Masterminds/squirrel/issues/382) | Bug |
 | ✅ Fixed | `CaseBuilder` rejects non-string `int` values in When/Then | [#388](https://github.com/Masterminds/squirrel/issues/388) | Bug |
-| 🟡 High | Conditional insert columns/values produce invalid SQL | [#336](https://github.com/Masterminds/squirrel/issues/336) | Bug |
+| ✅ Fixed | Conditional insert columns/values produce invalid SQL | [#336](https://github.com/Masterminds/squirrel/issues/336) | Bug |
 | ✅ Fixed | Multiple `Distinct()` calls produce invalid SQL | [#281](https://github.com/Masterminds/squirrel/issues/281) | Bug |
 | ✅ Fixed | Multi-key `Eq` inside `Or` missing parentheses | [#269](https://github.com/Masterminds/squirrel/issues/269) | Bug |
 | 🟡 Medium | `nil` array in `Eq` produces `(1=0)` instead of `IS NULL` | [#277](https://github.com/Masterminds/squirrel/issues/277) | Bug |

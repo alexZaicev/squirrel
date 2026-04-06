@@ -141,6 +141,7 @@ The `Placeholders(count int) string` function generates a comma-separated list o
 **InsertBuilder** notable methods:
 - `Into()`, `Columns()`, `Values()`
 - `SetMap()` — set columns and values from a `map[string]interface{}`
+- `SetColumn()` — add a single column and append its value to each existing row (enables conditional column/value building without producing invalid multi-row VALUES)
 - `Select()` — `INSERT ... SELECT` support
 - `Options()` — add keywords like `IGNORE` before INTO
 - `Returning()` — add `RETURNING` clause (PostgreSQL, SQLite 3.35+)
@@ -150,7 +151,7 @@ The `Placeholders(count int) string` function generates a comma-separated list o
 - `OnConflictWhere()` — add `WHERE` to the `DO UPDATE` action
 - `OnDuplicateKeyUpdate()`, `OnDuplicateKeyUpdateMap()` — MySQL `ON DUPLICATE KEY UPDATE`
 - `statementKeyword()` (private) — used by `Replace()` to change `INSERT` to `REPLACE`
-- `SafeInto()`, `SafeColumns()` — safe alternatives accepting `Ident` values for dynamic identifiers from user input
+- `SafeInto()`, `SafeColumns()`, `SafeSetColumn()` — safe alternatives accepting `Ident` values for dynamic identifiers from user input
 
 **UpdateBuilder** notable methods:
 - `Table()`, `Set()`, `SetMap()`
