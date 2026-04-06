@@ -338,13 +338,26 @@ query.Where(filters) // if no conditions → WHERE (1=0) → zero rows!
 
 **Files modified:** `expr.go`, `part.go`, `select.go`, `update.go`, `delete.go`, `insert.go`, `expr_test.go`, `where_test.go`, `integration/expr_test.go`. Full unit test coverage including nil `Or`/`And`, empty `Or{}`/`And{}`, nil `Or`/`And` in `Where()`, nil followed by real conditions, real conditions followed by nil, Dollar placeholder correctness, and `appendToSQL` separator correctness with empty first parts. Integration tests cover nil/empty `Or`/`And` producing no filter (returning all rows), and combined with real conditions.
 
-### 3.4 ✅ FIXED — Dollar Placeholder Misnumbering with Subqueries in `UpdateBuilder.Set`
+### 3.4 ✅ FIXED — Dollar Placeholder Misnumbering with Subqueries in `UpdateBuilder.Set` — **DONE**
 
 > **GitHub [#326](https://github.com/Masterminds/squirrel/issues/326)** — "UpdateBuilder.Set with subquery produces wrong dollar parameter placeholders" (opened 2022-07-25).
 
-**Fixed.** The root cause was that `updateData.toSQLRaw()` called `vs.ToSQL()` on `Sqlizer` values in SET clauses, which applied the placeholder format (e.g., Dollar `$1, $2, ...`) on the inner subquery. When the outer `ToSQL()` then applied `ReplacePlaceholders` on the full SQL string, it numbered only the remaining `?` placeholders, causing duplicate/misnumbered positional parameters.
+~~`Update("t").Set("a", 1).Set("b", Select("x").From("y").Where("z = ?", 2)).Where("id = ?", 3).PlaceholderFormat(Dollar).ToSQL()` produced misnumbered placeholders like `$1, $1, $2` instead of the correct `$1, $2, $3`.~~
 
-The fix replaces `vs.ToSQL()` with `nestedToSQL(vs)` in the SET clause handling, which calls `toSQLRaw()` on builders that implement the `rawSqlizer` interface. This keeps inner placeholders as `?` so the outer `ReplacePlaceholders` pass numbers everything sequentially. The same fix was applied to `appendSetClauses()`, `appendValuesToSQL()`, and `appendSelectToSQL()` in `insert.go` which had the identical bug pattern.
+**Fixed** (April 2026). The root cause was that `updateData.toSQLRaw()` called `vs.ToSQL()` on `Sqlizer` values in SET clauses, which applied the placeholder format (e.g., Dollar `$1, $2, ...`) on the inner subquery. When the outer `ToSQL()` then applied `ReplacePlaceholders` on the full SQL string, it numbered only the remaining `?` placeholders, causing duplicate/misnumbered positional parameters.
+
+The fix replaces `vs.ToSQL()` with `nestedToSQL(vs)` in the SET clause handling, which calls `toSQLRaw()` on builders that implement the `rawSqlizer` interface. This keeps inner placeholders as `?` so the outer `ReplacePlaceholders` pass numbers everything sequentially. The same fix was applied to `appendSetClauses()` (shared helper used by ON CONFLICT DO UPDATE and ON DUPLICATE KEY UPDATE), `appendValuesToSQL()`, and `appendSelectToSQL()` in `insert.go` which had the identical bug pattern.
+
+**Affected patterns (now all correct):**
+- `Update("t").Set("col", Select(...))` — subquery as SET value
+- `Update("t").SetMap(map[string]any{"col": Select(...)})` — subquery in SetMap
+- `Update("t").Set("col", Expr("(SELECT ...)", args...))` — Expr-wrapped subquery
+- `Update("t").Set("col", Case().When(...).Else(...))` — CaseBuilder as SET value
+- Multiple subqueries in SET: `Set("a", sub1).Set("b", sub2)` — sequential numbering
+- Mixed scenarios: SET subquery + WHERE subquery + FromSelect — all numbered correctly
+- All positional placeholder formats: Dollar (`$1`), Colon (`:1`), AtP (`@p1`)
+
+**Files modified:** `update.go`, `insert.go`, `update_test.go`, `integration/update_test.go`. Unit tests cover: single subquery with Dollar, multiple subqueries with Dollar, Colon format, AtP format, Expr-wrapped subquery, CaseBuilder with Dollar, SetMap with subquery and Dollar, mixed FromSelect + Set subquery, and Where with Eq subquery + Set subquery. Integration tests cover: Dollar/Colon/AtP placeholder SQL generation, end-to-end subquery execution against live database, SetMap with subquery, mixed Set + Where subqueries, and multiple SET subqueries execution.
 
 ### 3.5 ✅ FIXED — Misplaced Parameters with Window Functions / Complex Subqueries — **DONE**
 
@@ -512,7 +525,7 @@ if needC {
 
 | Priority | Issue | GitHub | Type |
 |----------|-------|--------|------|
-| 🔴 High | Dollar placeholder misnumbering with subqueries in `Update.Set` | [#326](https://github.com/Masterminds/squirrel/issues/326) | Bug |
+| ✅ Fixed | Dollar placeholder misnumbering with subqueries in `Update.Set` | [#326](https://github.com/Masterminds/squirrel/issues/326) | Bug |
 | ✅ Fixed | Misplaced params with window functions / multiple subqueries | [#351](https://github.com/Masterminds/squirrel/issues/351), [#285](https://github.com/Masterminds/squirrel/issues/285) | Bug |
 | ✅ Fixed | `nil` Or/And clause silently produces `WHERE (1=0)` | [#382](https://github.com/Masterminds/squirrel/issues/382) | Bug |
 | ✅ Fixed | `CaseBuilder` rejects non-string `int` values in When/Then | [#388](https://github.com/Masterminds/squirrel/issues/388) | Bug |

@@ -319,3 +319,81 @@ func TestUpdateBuilderSetCaseSubqueryDollarPlaceholders(t *testing.T) {
 	expectedArgs := []any{1, 2, 3, 4, 5}
 	assert.Equal(t, expectedArgs, args)
 }
+
+func TestUpdateBuilderSetSubqueryAtPPlaceholders(t *testing.T) {
+	// AtP-style positional placeholders should also number correctly.
+	b := Update("t").
+		Set("a", 1).
+		Set("b", Select("x").From("y").Where("z = ?", 2)).
+		Where("id = ?", 3).
+		PlaceholderFormat(AtP)
+
+	sql, args, err := b.ToSQL()
+	assert.NoError(t, err)
+
+	expectedSQL := "UPDATE t SET a = @p1, b = (SELECT x FROM y WHERE z = @p2) WHERE id = @p3"
+	assert.Equal(t, expectedSQL, sql)
+
+	expectedArgs := []any{1, 2, 3}
+	assert.Equal(t, expectedArgs, args)
+}
+
+func TestUpdateBuilderSetMapSubqueryDollarPlaceholders(t *testing.T) {
+	// SetMap with a Sqlizer value should also number correctly with Dollar.
+	b := Update("t").
+		SetMap(map[string]any{
+			"a": 1,
+			"b": Select("x").From("y").Where("z = ?", 2),
+		}).
+		Where("id = ?", 3).
+		PlaceholderFormat(Dollar)
+
+	sql, args, err := b.ToSQL()
+	assert.NoError(t, err)
+
+	expectedSQL := "UPDATE t SET a = $1, b = (SELECT x FROM y WHERE z = $2) WHERE id = $3"
+	assert.Equal(t, expectedSQL, sql)
+
+	expectedArgs := []any{1, 2, 3}
+	assert.Equal(t, expectedArgs, args)
+}
+
+func TestUpdateBuilderSetSubqueryFromSelectDollarPlaceholders(t *testing.T) {
+	// Mixed: Set with subquery + FromSelect + Where, all with Dollar placeholders.
+	b := Update("t").
+		Set("a", Select("x").From("y").Where("y.id = ?", 1)).
+		FromSelect(Select("id").From("s").Where("s.active = ?", true), "sub").
+		Where("t.id = sub.id").
+		Where("t.status = ?", 2).
+		PlaceholderFormat(Dollar)
+
+	sql, args, err := b.ToSQL()
+	assert.NoError(t, err)
+
+	expectedSQL := "UPDATE t " +
+		"SET a = (SELECT x FROM y WHERE y.id = $1) " +
+		"FROM (SELECT id FROM s WHERE s.active = $2) AS sub " +
+		"WHERE t.id = sub.id AND t.status = $3"
+	assert.Equal(t, expectedSQL, sql)
+
+	expectedArgs := []any{1, true, 2}
+	assert.Equal(t, expectedArgs, args)
+}
+
+func TestUpdateBuilderSetSubqueryInWhereDollarPlaceholders(t *testing.T) {
+	// Set with subquery + Where with Eq subquery, all with Dollar.
+	b := Update("t").
+		Set("a", 1).
+		Set("b", Select("x").From("y").Where("z = ?", 2)).
+		Where(Eq{"t.id": Select("id").From("s").Where("s.active = ?", true)}).
+		PlaceholderFormat(Dollar)
+
+	sql, args, err := b.ToSQL()
+	assert.NoError(t, err)
+
+	expectedSQL := "UPDATE t SET a = $1, b = (SELECT x FROM y WHERE z = $2) WHERE t.id IN (SELECT id FROM s WHERE s.active = $3)"
+	assert.Equal(t, expectedSQL, sql)
+
+	expectedArgs := []any{1, 2, true}
+	assert.Equal(t, expectedArgs, args)
+}

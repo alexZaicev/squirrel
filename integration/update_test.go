@@ -823,3 +823,59 @@ func TestUpdateSetSubqueryExecution(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, 42, total)
 }
+
+func TestUpdateSetMapSubqueryDollarPlaceholders(t *testing.T) {
+	// Regression: SetMap with a Sqlizer value should produce correctly
+	// numbered Dollar placeholders, same as Set().
+	q := sqrl.Update("t").
+		SetMap(map[string]interface{}{
+			"a": 1,
+			"b": sqrl.Select("x").From("y").Where("z = ?", 2),
+		}).
+		Where("id = ?", 3).
+		PlaceholderFormat(sqrl.Dollar)
+
+	sqlStr, args, err := q.ToSQL()
+	require.NoError(t, err)
+	assert.Equal(t, "UPDATE t SET a = $1, b = (SELECT x FROM y WHERE z = $2) WHERE id = $3", sqlStr)
+	assert.Equal(t, []interface{}{1, 2, 3}, args)
+}
+
+func TestUpdateSetSubqueryWithWhereSubqueryDollarPlaceholders(t *testing.T) {
+	// Mixed: Set with subquery + Where with Eq subquery, Dollar placeholders.
+	q := sqrl.Update("t").
+		Set("a", 1).
+		Set("b", sqrl.Select("x").From("y").Where("z = ?", 2)).
+		Where(sqrl.Eq{"t.id": sqrl.Select("id").From("s").Where("s.active = ?", true)}).
+		PlaceholderFormat(sqrl.Dollar)
+
+	sqlStr, args, err := q.ToSQL()
+	require.NoError(t, err)
+	assert.Equal(t,
+		"UPDATE t SET a = $1, b = (SELECT x FROM y WHERE z = $2) "+
+			"WHERE t.id IN (SELECT id FROM s WHERE s.active = $3)", sqlStr)
+	assert.Equal(t, []interface{}{1, 2, true}, args)
+}
+
+func TestUpdateSetMultipleSubqueriesExecution(t *testing.T) {
+	// End-to-end: multiple SET clauses each with a subquery.
+	createTable(t, "sq_upd_msub_s1", "(id INTEGER, v1 INTEGER)")
+	createTable(t, "sq_upd_msub_s2", "(id INTEGER, v2 INTEGER)")
+	createTable(t, "sq_upd_msub_dst", "(id INTEGER, a INTEGER, b INTEGER)")
+	seedTable(t, "INSERT INTO sq_upd_msub_s1 VALUES (1, 10)")
+	seedTable(t, "INSERT INTO sq_upd_msub_s2 VALUES (1, 20)")
+	seedTable(t, "INSERT INTO sq_upd_msub_dst VALUES (1, 0, 0)")
+
+	_, err := sb.Update("sq_upd_msub_dst").
+		Set("a", sqrl.Select("v1").From("sq_upd_msub_s1").Where(sqrl.Eq{"sq_upd_msub_s1.id": 1})).
+		Set("b", sqrl.Select("v2").From("sq_upd_msub_s2").Where(sqrl.Eq{"sq_upd_msub_s2.id": 1})).
+		Where(sqrl.Eq{"id": 1}).
+		Exec()
+	require.NoError(t, err)
+
+	var a, b int
+	err = db.QueryRow("SELECT a, b FROM sq_upd_msub_dst WHERE id = 1").Scan(&a, &b)
+	require.NoError(t, err)
+	assert.Equal(t, 10, a)
+	assert.Equal(t, 20, b)
+}
