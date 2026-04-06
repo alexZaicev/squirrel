@@ -93,6 +93,7 @@ Shared utilities:
 - `case.go` — `CaseBuilder`, `caseData`, `whenPart`, and `sqlizerBuffer` helper
 - `cte.go` — `CteBuilder`, `cteData`, `ctePart` for Common Table Expressions (`WITH` / `WITH RECURSIVE`)
 - `join.go` — `JoinBuilder` interface and `JoinExpr` structured join builder, `JoinType` constants (`JoinInner`, `JoinLeft`, `JoinRight`, `JoinFull`, `JoinCross`). `JoinExpr(table)` returns a `JoinBuilder`; chain `.Type()`, `.As()`, `.On()`, `.OnExpr()`, `.Using()`, `.SubQuery()` to build structured join clauses. Pass to `SelectBuilder.JoinClause()`.
+- `ident.go` — `Ident` type (validated SQL identifier), `QuoteIdent()` / `ValidateIdent()` functions, `MustQuoteIdent()` / `MustValidateIdent()` panic variants, `QuoteIdents()` / `ValidateIdents()` batch variants, `ErrInvalidIdentifier` sentinel error, `OrderDir` type (`Asc` / `Desc`). Used by `Safe*` builder methods on `SelectBuilder`, `InsertBuilder`, `UpdateBuilder`, `DeleteBuilder` to prevent SQL injection via dynamic identifiers.
 - `statement.go` — `StatementBuilderType` and package-level convenience functions (`Select()`, `Insert()`, `Replace()`, `Update()`, `Delete()`, `Case()`, `Union()`, `UnionAll()`, `Intersect()`, `Except()`, `With()`, `WithRecursive()`, `WithColumns()`, `WithRecursiveColumns()`)
 - `stmtcacher.go` — `Preparer`, `DBProxy`, and `StmtCache` for caching prepared statements
 - `stmtcacher_ctx.go` / `stmtcacher_noctx.go` — Build-tag split for Go >= 1.8 context support (`NewStmtCache` constructor lives here)
@@ -134,6 +135,7 @@ The `Placeholders(count int) string` function generates a comma-separated list o
 - `OrderBy()`, `OrderByClause()` — simple or complex ORDER BY
 - `Limit()`, `RemoveLimit()`, `Offset()`, `RemoveOffset()` — parameterized (`LIMIT ?` / `OFFSET ?` with bound args)
 - `Scan()` — shortcut for `QueryRow().Scan()`
+- `SafeFrom()`, `SafeColumns()`, `SafeGroupBy()`, `SafeOrderBy()`, `SafeOrderByDir()` — safe alternatives accepting `Ident` values for dynamic identifiers from user input
 
 **InsertBuilder** notable methods:
 - `Into()`, `Columns()`, `Values()`
@@ -147,17 +149,20 @@ The `Placeholders(count int) string` function generates a comma-separated list o
 - `OnConflictWhere()` — add `WHERE` to the `DO UPDATE` action
 - `OnDuplicateKeyUpdate()`, `OnDuplicateKeyUpdateMap()` — MySQL `ON DUPLICATE KEY UPDATE`
 - `statementKeyword()` (private) — used by `Replace()` to change `INSERT` to `REPLACE`
+- `SafeInto()`, `SafeColumns()` — safe alternatives accepting `Ident` values for dynamic identifiers from user input
 
 **UpdateBuilder** notable methods:
 - `Table()`, `Set()`, `SetMap()`
 - `From()`, `FromSelect()` — PostgreSQL-style `UPDATE ... FROM`
 - `Where()`, `OrderBy()`, `Limit()`, `Offset()` — LIMIT/OFFSET are parameterized
 - `Returning()` — add `RETURNING` clause (PostgreSQL, SQLite 3.35+)
+- `SafeTable()`, `SafeSet()` — safe alternatives accepting `Ident` values for dynamic identifiers from user input
 
 **DeleteBuilder** notable methods:
 - `From()`, `Where()`, `OrderBy()`, `Limit()`, `Offset()` — LIMIT/OFFSET are parameterized
 - `Returning()` — add `RETURNING` clause (PostgreSQL, SQLite 3.35+)
 - `Query()` — useful with `RETURNING` clauses
+- `SafeFrom()` — safe alternative accepting `Ident` value for dynamic table name from user input
 
 **UnionBuilder** notable methods:
 - `Union()`, `UnionAll()`, `Intersect()`, `Except()` — add set operations
@@ -221,5 +226,7 @@ Do not add new dependencies without strong justification. This is a maintenance-
 ## Security considerations
 
 - Never interpolate user input directly into SQL strings. Always use parameterized placeholders (`?`).
+- **Identifier safety:** Methods like `From()`, `Into()`, `Table()`, `Columns()`, `Set()`, `Join()`, `OrderBy()`, `GroupBy()`, and `Options()` interpolate strings directly into SQL. When identifiers come from user input (e.g., dynamic sort columns from API query parameters), use `QuoteIdent()` or `ValidateIdent()` to produce safe `Ident` values, then pass them to the corresponding `Safe*` builder methods (`SafeFrom()`, `SafeInto()`, `SafeTable()`, `SafeColumns()`, `SafeSet()`, `SafeOrderBy()`, `SafeOrderByDir()`, `SafeGroupBy()`).
+- Two strategies for identifier safety: `QuoteIdent` wraps any string in ANSI double quotes (maximum flexibility), while `ValidateIdent` rejects strings that don't match a strict identifier pattern (maximum strictness). Choose based on your use case.
 - `DebugSqlizer` output should never be executed — it inlines arguments for display purposes only.
 - When modifying placeholder replacement logic, ensure escaped `??` sequences are handled correctly to prevent injection vectors.

@@ -1088,6 +1088,125 @@ func ExamplePlaceholders() {
 }
 
 // ---------------------------------------------------------------------------
+// Safe Identifiers
+// ---------------------------------------------------------------------------
+
+func ExampleQuoteIdent() {
+	id, _ := sq.QuoteIdent("users")
+	fmt.Println(id.String())
+	fmt.Println(id.Raw())
+	// Output:
+	// "users"
+	// users
+}
+
+func ExampleQuoteIdent_schemaQualified() {
+	id, _ := sq.QuoteIdent("public.users")
+	fmt.Println(id.String())
+	// Output: "public"."users"
+}
+
+func ExampleQuoteIdent_injectionSafe() {
+	// Even malicious input is safely wrapped in quotes.
+	id, _ := sq.QuoteIdent("users; DROP TABLE users; --")
+	fmt.Println(id.String())
+	// Output: "users; DROP TABLE users; --"
+}
+
+func ExampleValidateIdent() {
+	id, err := sq.ValidateIdent("users")
+	if err != nil {
+		panic(err)
+	}
+	fmt.Println(id.String())
+	// Output: users
+}
+
+func ExampleValidateIdent_rejected() {
+	_, err := sq.ValidateIdent("users; DROP TABLE users; --")
+	fmt.Println(err)
+	// Output: invalid SQL identifier: "users; DROP TABLE users; --" contains invalid characters
+}
+
+func ExampleSelectBuilder_SafeFrom() {
+	table, _ := sq.QuoteIdent("users")
+	sql, _, _ := sq.Select("*").SafeFrom(table).ToSQL()
+	fmt.Println(sql)
+	// Output: SELECT * FROM "users"
+}
+
+func ExampleSelectBuilder_SafeColumns() {
+	cols, _ := sq.QuoteIdents("id", "name", "email")
+	sql, _, _ := sq.Select().SafeColumns(cols...).From("users").ToSQL()
+	fmt.Println(sql)
+	// Output: SELECT "id", "name", "email" FROM users
+}
+
+func ExampleSelectBuilder_SafeOrderByDir() {
+	col, _ := sq.QuoteIdent("name")
+	sql, _, _ := sq.Select("*").From("users").SafeOrderByDir(col, sq.Desc).ToSQL()
+	fmt.Println(sql)
+	// Output: SELECT * FROM users ORDER BY "name" DESC
+}
+
+func ExampleSelectBuilder_SafeGroupBy() {
+	col, _ := sq.QuoteIdent("category")
+	sql, _, _ := sq.Select("category", "count(*)").From("items").SafeGroupBy(col).ToSQL()
+	fmt.Println(sql)
+	// Output: SELECT category, count(*) FROM items GROUP BY "category"
+}
+
+func ExampleInsertBuilder_SafeInto() {
+	table, _ := sq.QuoteIdent("users")
+	sql, args, _ := sq.Insert("").SafeInto(table).Columns("name").Values("moe").ToSQL()
+	fmt.Println(sql)
+	fmt.Println(args)
+	// Output:
+	// INSERT INTO "users" (name) VALUES (?)
+	// [moe]
+}
+
+func ExampleInsertBuilder_SafeColumns() {
+	cols, _ := sq.QuoteIdents("id", "name")
+	sql, args, _ := sq.Insert("users").SafeColumns(cols...).Values(1, "moe").ToSQL()
+	fmt.Println(sql)
+	fmt.Println(args)
+	// Output:
+	// INSERT INTO users ("id","name") VALUES (?,?)
+	// [1 moe]
+}
+
+func ExampleUpdateBuilder_SafeTable() {
+	table, _ := sq.QuoteIdent("users")
+	sql, args, _ := sq.Update("").SafeTable(table).Set("name", "moe").Where("id = ?", 1).ToSQL()
+	fmt.Println(sql)
+	fmt.Println(args)
+	// Output:
+	// UPDATE "users" SET name = ? WHERE id = ?
+	// [moe 1]
+}
+
+func ExampleUpdateBuilder_SafeSet() {
+	col, _ := sq.QuoteIdent("name")
+	sql, args, _ := sq.Update("users").SafeSet(col, "moe").Where("id = ?", 1).ToSQL()
+	fmt.Println(sql)
+	fmt.Println(args)
+	// Output:
+	// UPDATE users SET "name" = ? WHERE id = ?
+	// [moe 1]
+}
+
+func ExampleDeleteBuilder_SafeFrom() {
+	table, _ := sq.QuoteIdent("users")
+	sql, args, _ := sq.Delete("").SafeFrom(table).Where("id = ?", 1).ToSQL()
+	fmt.Println(sql)
+	fmt.Println(args)
+	// Output:
+	// DELETE FROM "users" WHERE id = ?
+	// [1]
+}
+
+// ---------------------------------------------------------------------------
 // StatementBuilder
 // ---------------------------------------------------------------------------
 
