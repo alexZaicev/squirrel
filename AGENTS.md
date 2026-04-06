@@ -92,6 +92,7 @@ Shared utilities:
 - `row.go` — `RowScanner` interface and `Row` wrapper
 - `case.go` — `CaseBuilder`, `caseData`, `whenPart`, and `sqlizerBuffer` helper
 - `cte.go` — `CteBuilder`, `cteData`, `ctePart` for Common Table Expressions (`WITH` / `WITH RECURSIVE`)
+- `join.go` — `JoinBuilder` interface and `JoinExpr` structured join builder, `JoinType` constants (`JoinInner`, `JoinLeft`, `JoinRight`, `JoinFull`, `JoinCross`). `JoinExpr(table)` returns a `JoinBuilder`; chain `.Type()`, `.As()`, `.On()`, `.OnExpr()`, `.Using()`, `.SubQuery()` to build structured join clauses. Pass to `SelectBuilder.JoinClause()`.
 - `statement.go` — `StatementBuilderType` and package-level convenience functions (`Select()`, `Insert()`, `Replace()`, `Update()`, `Delete()`, `Case()`, `Union()`, `UnionAll()`, `Intersect()`, `Except()`, `With()`, `WithRecursive()`, `WithColumns()`, `WithRecursiveColumns()`)
 - `stmtcacher.go` — `Preparer`, `DBProxy`, and `StmtCache` for caching prepared statements
 - `stmtcacher_ctx.go` / `stmtcacher_noctx.go` — Build-tag split for Go >= 1.8 context support (`NewStmtCache` constructor lives here)
@@ -127,7 +128,8 @@ The `Placeholders(count int) string` function generates a comma-separated list o
 - `Distinct()`, `Options()` — add SELECT options
 - `Columns()`, `Column()`, `RemoveColumns()` — manage result columns
 - `From()`, `FromSelect()` — set FROM clause (supports subqueries)
-- `Join()`, `LeftJoin()`, `RightJoin()`, `InnerJoin()`, `CrossJoin()`, `JoinClause()`
+- `Join()`, `LeftJoin()`, `RightJoin()`, `InnerJoin()`, `CrossJoin()`, `FullJoin()`, `JoinClause()`
+- `JoinUsing()`, `LeftJoinUsing()`, `RightJoinUsing()`, `InnerJoinUsing()`, `CrossJoinUsing()`, `FullJoinUsing()` — convenience for `JOIN table USING (col1, col2)`
 - `Where()`, `GroupBy()`, `Having()`
 - `OrderBy()`, `OrderByClause()` — simple or complex ORDER BY
 - `Limit()`, `RemoveLimit()`, `Offset()`, `RemoveOffset()`

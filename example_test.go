@@ -116,6 +116,142 @@ func ExampleSelectBuilder_LeftJoin() {
 	// Output: SELECT u.id, u.name, o.total FROM users u LEFT JOIN orders o ON o.user_id = u.id
 }
 
+func ExampleSelectBuilder_FullJoin() {
+	sql, _, _ := sq.Select("u.id", "d.name").
+		From("users u").
+		FullJoin("departments d ON u.dept_id = d.id").
+		ToSQL()
+	fmt.Println(sql)
+	// Output: SELECT u.id, d.name FROM users u FULL OUTER JOIN departments d ON u.dept_id = d.id
+}
+
+func ExampleSelectBuilder_JoinUsing() {
+	sql, _, _ := sq.Select("orders.id", "customers.name").
+		From("orders").
+		JoinUsing("customers", "customer_id").
+		ToSQL()
+	fmt.Println(sql)
+	// Output: SELECT orders.id, customers.name FROM orders JOIN customers USING (customer_id)
+}
+
+func ExampleSelectBuilder_JoinUsing_multipleColumns() {
+	sql, _, _ := sq.Select("*").
+		From("orders").
+		JoinUsing("shipments", "region_id", "order_id").
+		ToSQL()
+	fmt.Println(sql)
+	// Output: SELECT * FROM orders JOIN shipments USING (region_id, order_id)
+}
+
+func ExampleSelectBuilder_LeftJoinUsing() {
+	sql, _, _ := sq.Select("orders.id", "returns.reason").
+		From("orders").
+		LeftJoinUsing("returns", "order_id").
+		ToSQL()
+	fmt.Println(sql)
+	// Output: SELECT orders.id, returns.reason FROM orders LEFT JOIN returns USING (order_id)
+}
+
+func ExampleSelectBuilder_RightJoinUsing() {
+	sql, _, _ := sq.Select("orders.id", "products.name").
+		From("orders").
+		RightJoinUsing("products", "product_id").
+		ToSQL()
+	fmt.Println(sql)
+	// Output: SELECT orders.id, products.name FROM orders RIGHT JOIN products USING (product_id)
+}
+
+func ExampleSelectBuilder_InnerJoinUsing() {
+	sql, _, _ := sq.Select("e.name", "d.name").
+		From("employees e").
+		InnerJoinUsing("departments d", "dept_id").
+		ToSQL()
+	fmt.Println(sql)
+	// Output: SELECT e.name, d.name FROM employees e INNER JOIN departments d USING (dept_id)
+}
+
+func ExampleSelectBuilder_CrossJoinUsing() {
+	sql, _, _ := sq.Select("a.x", "b.y").
+		From("a").
+		CrossJoinUsing("b", "id").
+		ToSQL()
+	fmt.Println(sql)
+	// Output: SELECT a.x, b.y FROM a CROSS JOIN b USING (id)
+}
+
+func ExampleSelectBuilder_FullJoinUsing() {
+	sql, _, _ := sq.Select("o.id", "r.region_name").
+		From("orders o").
+		FullJoinUsing("regions r", "region_id").
+		ToSQL()
+	fmt.Println(sql)
+	// Output: SELECT o.id, r.region_name FROM orders o FULL OUTER JOIN regions r USING (region_id)
+}
+
+func ExampleJoinExpr() {
+	sql, _, _ := sq.Select("items.name", "users.username").
+		From("items").
+		JoinClause(
+			sq.JoinExpr("users").On("items.fk_user_key = users.key"),
+		).
+		ToSQL()
+	fmt.Println(sql)
+	// Output: SELECT items.name, users.username FROM items JOIN users ON items.fk_user_key = users.key
+}
+
+func ExampleJoinExpr_multipleConditions() {
+	sql, args, _ := sq.Select("items.name", "users.username").
+		From("items").
+		JoinClause(
+			sq.JoinExpr("users").
+				On("items.fk_user_key = users.key").
+				On("users.username = ?", "alice"),
+		).
+		ToSQL()
+	fmt.Println(sql)
+	fmt.Println(args)
+	// Output:
+	// SELECT items.name, users.username FROM items JOIN users ON items.fk_user_key = users.key AND users.username = ?
+	// [alice]
+}
+
+func ExampleJoinExpr_leftJoinAlias() {
+	sql, _, _ := sq.Select("i.name", "u.username").
+		From("items i").
+		JoinClause(
+			sq.JoinExpr("users").Type(sq.JoinLeft).As("u").
+				On("i.fk_user_key = u.key"),
+		).
+		ToSQL()
+	fmt.Println(sql)
+	// Output: SELECT i.name, u.username FROM items i LEFT JOIN users u ON i.fk_user_key = u.key
+}
+
+func ExampleJoinExpr_using() {
+	sql, _, _ := sq.Select("*").
+		From("orders").
+		JoinClause(sq.JoinExpr("customers").Using("customer_id")).
+		ToSQL()
+	fmt.Println(sql)
+	// Output: SELECT * FROM orders JOIN customers USING (customer_id)
+}
+
+func ExampleJoinExpr_subQuery() {
+	sub := sq.Select("id", "name").From("users").Where(sq.Eq{"active": true})
+	sql, args, _ := sq.Select("items.name", "u.name").
+		From("items").
+		JoinClause(
+			sq.JoinExpr("").SubQuery(sub).As("u").
+				On("items.fk_user_key = u.id"),
+		).
+		ToSQL()
+	fmt.Println(sql)
+	fmt.Println(args)
+	// Output:
+	// SELECT items.name, u.name FROM items JOIN (SELECT id, name FROM users WHERE active = ?) u ON items.fk_user_key = u.id
+	// [true]
+}
+
 func ExampleSelectBuilder_GroupBy() {
 	sql, _, _ := sq.Select("department", "count(*) as cnt").
 		From("employees").

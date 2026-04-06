@@ -122,11 +122,23 @@ Expr("EXISTS (?)", subQuery)
 
 **Files modified:** `expr.go`, `expr_test.go`, `integration/expr_test.go`. Unit tests cover: basic `Exists`, basic `NotExists`, subquery with args, nil subquery error, usage in `SelectBuilder.Where()`, Dollar placeholder correctness, composition with `And`/`Or`/`Not`, correlated subqueries, and `Expr`-based subqueries. Integration tests cover: correlated `EXISTS`, correlated `NOT EXISTS`, `EXISTS` with parameterized conditions, combination with `Eq`, `NOT EXISTS` combined with conditions, and Dollar placeholder correctness for both `Exists` and `NotExists`.
 
-### 1.9 `JOIN ... USING` Convenience
-All join helpers assume `ON` clauses via freeform strings. A `JoinUsing("table", "col1", "col2")` convenience would reduce boilerplate for the common case.
+### 1.9 ✅ `JOIN ... USING` Convenience — **DONE**
+~~All join helpers assume `ON` clauses via freeform strings. A `JoinUsing("table", "col1", "col2")` convenience would reduce boilerplate for the common case.~~
 
-### 1.10 `FULL OUTER JOIN`
-Only `JOIN`, `LEFT JOIN`, `RIGHT JOIN`, `INNER JOIN`, and `CROSS JOIN` are provided. `FULL OUTER JOIN` is missing — it's standard SQL supported by all major databases except MySQL (which supports it from 8.0.31+ via workarounds).
+**Implemented** (April 2026) via two complementary approaches:
+
+1. **Convenience methods:** Six new `*JoinUsing` methods on `SelectBuilder`: `JoinUsing()`, `LeftJoinUsing()`, `RightJoinUsing()`, `InnerJoinUsing()`, `CrossJoinUsing()`, and `FullJoinUsing()`. Each method takes a table name and one or more column names and generates a `JOIN table USING (col1, col2, ...)` clause. These delegate to `JoinClause()` internally.
+
+2. **Structured `JoinExpr` builder:** A new `JoinExpr(table)` constructor in `join.go` that returns a `JoinBuilder` interface (implemented by unexported `joinExprBuilder`). Chainable methods: `.Type()` (set join type via `JoinType` constants), `.As()` (alias), `.On()` (raw ON conditions with placeholders), `.OnExpr()` (Sqlizer-based ON conditions — reuse `Eq`, `Gt`, `Between`, etc.), `.Using()` (USING columns), `.SubQuery()` (join against a subquery). Pass the result to `SelectBuilder.JoinClause()`. This eliminates raw string concatenation for all join patterns.
+
+**Files modified:** `select.go`, `select_test.go`, `join.go`, `join_test.go`, `example_test.go`, `integration/join_test.go`. Full unit test coverage including single-column USING, multi-column USING, all six join types, mixed ON/USING joins, `JoinExpr` with all features (ON, OnExpr, USING, alias, subquery, all join types, Dollar placeholders, composition with expression helpers). Runnable `Example*` functions for godoc. Integration tests against SQLite (and PostgreSQL/MySQL when available).
+
+### 1.10 ✅ `FULL OUTER JOIN` — **DONE**
+~~Only `JOIN`, `LEFT JOIN`, `RIGHT JOIN`, `INNER JOIN`, and `CROSS JOIN` are provided. `FULL OUTER JOIN` is missing — it's standard SQL supported by all major databases except MySQL (which supports it from 8.0.31+ via workarounds).~~
+
+**Implemented** (April 2026) via a new `FullJoin(join string, rest ...any)` method on `SelectBuilder`. Follows the same pattern as existing join methods — delegates to `JoinClause("FULL OUTER JOIN " + join, rest...)`. Also includes `FullJoinUsing()` as part of the JOIN ... USING convenience feature (§1.9) and `JoinType` constant `JoinFull` for use with the `JoinExpr` structured builder.
+
+**Files modified:** `select.go`, `select_test.go`, `join.go`, `join_test.go`, `example_test.go`, `integration/join_test.go`. Unit tests cover `FullJoin` with and without args, `FullJoinUsing` with single and multiple columns, `JoinExpr` with `JoinFull` type. Runnable `Example*` functions for godoc. Integration tests (skipped on MySQL) cover FULL OUTER JOIN preserving both sides, WHERE filtering, placeholder args in ON clause, FULL OUTER JOIN USING with unmatched rows, and Dollar placeholder correctness.
 
 ### 1.11 Parameterized `LIMIT` / `OFFSET`
 `Limit` and `Offset` format the values as literal strings (`fmt.Sprintf("%d", limit)`) directly into SQL rather than using placeholders. This means the query string changes with different limit/offset values, defeating prepared-statement caching. Parameterized limits would allow statement reuse.
@@ -390,8 +402,8 @@ Building an insert incrementally — adding a column+value pair after the initia
 | ⭐ Medium | `SetMap` raw-expression values | [#353](https://github.com/Masterminds/squirrel/issues/353) |
 | ⭐ Medium | `Select FROM stored_proc(args...)` | [#306](https://github.com/Masterminds/squirrel/issues/306) |
 | ⭐ Medium | `INSERT...SELECT` with non-string columns | [#365](https://github.com/Masterminds/squirrel/issues/365) |
-| ⭐ Medium | `FULL OUTER JOIN` | — |
-| ⭐ Medium | `JOIN ... USING` convenience | — |
+| ✅ Done | `FULL OUTER JOIN` | — |
+| ✅ Done | `JOIN ... USING` convenience | — |
 | ⭐ Low | pgvector float-slice formatting | [#366](https://github.com/Masterminds/squirrel/issues/366) |
 | ⭐ Low | `COPY FROM` / `COPY TO` | [#359](https://github.com/Masterminds/squirrel/issues/359) |
 | ⭐ Low | `STRAIGHT_JOIN` | [#254](https://github.com/Masterminds/squirrel/issues/254) |
