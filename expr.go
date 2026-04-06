@@ -30,6 +30,14 @@ func Expr(sql string, args ...any) Sqlizer {
 }
 
 func (e expr) ToSQL() (sql string, args []any, err error) {
+	return e.toSQLInner(false)
+}
+
+func (e expr) toSQLRaw() (sql string, args []any, err error) {
+	return e.toSQLInner(true)
+}
+
+func (e expr) toSQLInner(nested bool) (sql string, args []any, err error) {
 	simple := true
 	for _, arg := range e.args {
 		if _, ok := arg.(Sqlizer); ok {
@@ -62,7 +70,11 @@ func (e expr) ToSQL() (sql string, args []any, err error) {
 
 		if as, ok := ap[0].(Sqlizer); ok {
 			// sqlizer argument; expand it and append the result
-			isql, iargs, err = as.ToSQL()
+			if nested {
+				isql, iargs, err = nestedToSQL(as)
+			} else {
+				isql, iargs, err = as.ToSQL()
+			}
 			buf.WriteString(sp[:i])
 			buf.WriteString(isql)
 			args = append(args, iargs...)
@@ -103,6 +115,25 @@ func (ce concatExpr) ToSQL() (sql string, args []any, err error) {
 	return
 }
 
+func (ce concatExpr) toSQLRaw() (sql string, args []any, err error) {
+	for _, part := range ce {
+		switch p := part.(type) {
+		case string:
+			sql += p
+		case Sqlizer:
+			pSQL, pArgs, err := nestedToSQL(p)
+			if err != nil {
+				return "", nil, err
+			}
+			sql += pSQL
+			args = append(args, pArgs...)
+		default:
+			return "", nil, fmt.Errorf("%#v is not a string or Sqlizer", part)
+		}
+	}
+	return
+}
+
 // ConcatExpr builds an expression by concatenating strings and other expressions.
 //
 // Ex:
@@ -130,6 +161,14 @@ func Alias(expr Sqlizer, alias string) Sqlizer {
 
 func (e aliasExpr) ToSQL() (sql string, args []any, err error) {
 	sql, args, err = e.expr.ToSQL()
+	if err == nil {
+		sql = fmt.Sprintf("(%s) AS %s", sql, e.alias)
+	}
+	return
+}
+
+func (e aliasExpr) toSQLRaw() (sql string, args []any, err error) {
+	sql, args, err = nestedToSQL(e.expr)
 	if err == nil {
 		sql = fmt.Sprintf("(%s) AS %s", sql, e.alias)
 	}

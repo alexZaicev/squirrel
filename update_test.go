@@ -306,8 +306,8 @@ func TestUpdateBuilderSetCaseSubqueryDollarPlaceholders(t *testing.T) {
 	// CaseBuilder within Set should also number correctly with Dollar.
 	b := Update("t").
 		Set("a", 1).
-		Set("b", Case().When("x = ?", Expr("?", 2)).Else(Expr("?", 3))).
-		Where("id = ?", 4).
+		Set("b", Case().When(Expr("x = ?", 2), Expr("?", 3)).Else(Expr("?", 4))).
+		Where("id = ?", 5).
 		PlaceholderFormat(Dollar)
 
 	sql, args, err := b.ToSQL()
@@ -316,6 +316,6 @@ func TestUpdateBuilderSetCaseSubqueryDollarPlaceholders(t *testing.T) {
 	expectedSQL := "UPDATE t SET a = $1, b = CASE WHEN x = $2 THEN $3 ELSE $4 END WHERE id = $5"
 	assert.Equal(t, expectedSQL, sql)
 
-	expectedArgs := []any{1, 2, 3, 4}
+	expectedArgs := []any{1, 2, 3, 4, 5}
 	assert.Equal(t, expectedArgs, args)
 }

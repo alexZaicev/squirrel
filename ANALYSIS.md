@@ -346,13 +346,34 @@ query.Where(filters) // if no conditions → WHERE (1=0) → zero rows!
 
 The fix replaces `vs.ToSQL()` with `nestedToSQL(vs)` in the SET clause handling, which calls `toSQLRaw()` on builders that implement the `rawSqlizer` interface. This keeps inner placeholders as `?` so the outer `ReplacePlaceholders` pass numbers everything sequentially. The same fix was applied to `appendSetClauses()`, `appendValuesToSQL()`, and `appendSelectToSQL()` in `insert.go` which had the identical bug pattern.
 
-### 3.5 🟡 HIGH — Misplaced Parameters with Window Functions / Complex Subqueries
+### 3.5 ✅ FIXED — Misplaced Parameters with Window Functions / Complex Subqueries — **DONE**
 
 > **GitHub [#351](https://github.com/Masterminds/squirrel/issues/351)** — "Misplaced params when using windows or subqueries" (opened 2022-12-31).
 >
 > **GitHub [#285](https://github.com/Masterminds/squirrel/issues/285)** — "Placeholder count is wrong with sub-queries" (opened 2021-05-19).
 
-When composing multiple subqueries (via `Alias`, `Prefix`/`Suffix` wrapping, or in column expressions), parameter ordering becomes incorrect. The placeholder counter resets per-subquery rather than tracking a global index. Users must work around this with manual `Dollar.ReplacePlaceholders()` calls after `ToSql()`.
+~~When composing multiple subqueries (via `Alias`, `Prefix`/`Suffix` wrapping, or in column expressions), parameter ordering becomes incorrect. The placeholder counter resets per-subquery rather than tracking a global index. Users must work around this with manual `Dollar.ReplacePlaceholders()` calls after `ToSql()`.~~
+
+**Fixed** (April 2026) by adding `toSQLRaw()` methods to three expression wrapper types — `expr`, `aliasExpr`, and `concatExpr` — so they implement the `rawSqlizer` interface. This ensures that when these types are used nested inside an outer query, `nestedToSQL()` calls `toSQLRaw()` which uses `nestedToSQL()` for inner `Sqlizer` values. This prevents double placeholder formatting — inner subqueries return raw `?` placeholders and the outer query's single `ReplacePlaceholders` pass numbers everything sequentially.
+
+**Root cause:** The three wrapper types called `.ToSQL()` directly on their inner `Sqlizer` values (e.g., `SelectBuilder`). When the inner builder had a positional placeholder format (Dollar, Colon, AtP), `.ToSQL()` applied that format (producing `$1, $2...`). The outer query's `ReplacePlaceholders` then only renumbered the remaining unformatted `?` placeholders, causing duplicate/misnumbered positional parameters.
+
+**Types fixed:**
+- `expr` (created by `Expr()`) — refactored into `toSQLInner(nested bool)` helper. `toSQLRaw()` calls `nestedToSQL(as)` for `Sqlizer` args; `ToSQL()` continues to call `as.ToSQL()` for backward compatibility at the top level.
+- `aliasExpr` (created by `Alias()`) — `toSQLRaw()` calls `nestedToSQL(e.expr)` instead of `e.expr.ToSQL()`.
+- `concatExpr` (created by `ConcatExpr()`) — `toSQLRaw()` calls `nestedToSQL(p)` for `Sqlizer` parts.
+
+**Affected patterns (now all correct):**
+- `Column(Alias(subquery, "alias"))` — aliased subquery as column expression
+- `Column(Expr("(?) AS alias", subquery))` — Expr with Sqlizer arg in column
+- `Column(ConcatExpr("COALESCE(", subquery, ", 0)"))` — ConcatExpr with subquery
+- `Prefix("WITH cte AS (?)", subquery)` — Expr-wrapped subquery in prefix
+- `Suffix("AND EXISTS (?)", subquery)` — Expr-wrapped subquery in suffix
+- Any combination of the above in a single query with Dollar/Colon/AtP format
+
+**Note:** The `FromSelect()` method's existing `PlaceholderFormat(Question)` workaround (line 305 of `select.go`) is now redundant but has been preserved for backward compatibility.
+
+**Files modified:** `expr.go`, `expr_test.go`, `integration/expr_test.go`. Full unit test coverage including `Alias` with Dollar subquery (single and multiple), `Expr` with Dollar subquery (single and multiple args), `ConcatExpr` with Dollar subquery, `Alias(ConcatExpr(...))` nesting, `Prefix`/`Suffix` with Expr-wrapped subqueries, complex multi-position queries with subqueries in columns/WHERE/prefix/suffix, `rawSqlizer` interface verification for all three types, and Colon/AtP format correctness. Integration tests (SQLite) cover: aliased subquery execution, Dollar placeholder SQL generation for all patterns, multi-column aliased subqueries, `Expr` subquery in WHERE, `ConcatExpr` subquery execution, prefix/suffix subqueries, complex multi-position Dollar queries, and Colon/AtP placeholder verification.
 
 ### 3.6 🟡 HIGH — `CaseBuilder` Rejects Non-String Values (`int`) in `When`/`Then`
 
@@ -448,7 +469,7 @@ Building an insert incrementally — adding a column+value pair after the initia
 | Priority | Issue | GitHub | Type |
 |----------|-------|--------|------|
 | 🔴 High | Dollar placeholder misnumbering with subqueries in `Update.Set` | [#326](https://github.com/Masterminds/squirrel/issues/326) | Bug |
-| 🔴 High | Misplaced params with window functions / multiple subqueries | [#351](https://github.com/Masterminds/squirrel/issues/351), [#285](https://github.com/Masterminds/squirrel/issues/285) | Bug |
+| ✅ Fixed | Misplaced params with window functions / multiple subqueries | [#351](https://github.com/Masterminds/squirrel/issues/351), [#285](https://github.com/Masterminds/squirrel/issues/285) | Bug |
 | ✅ Fixed | `nil` Or/And clause silently produces `WHERE (1=0)` | [#382](https://github.com/Masterminds/squirrel/issues/382) | Bug |
 | 🟡 High | `CaseBuilder` rejects non-string `int` values in When/Then | [#388](https://github.com/Masterminds/squirrel/issues/388) | Bug |
 | 🟡 High | Conditional insert columns/values produce invalid SQL | [#336](https://github.com/Masterminds/squirrel/issues/336) | Bug |

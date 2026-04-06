@@ -1361,3 +1361,221 @@ func TestNotNotExistsDoubleNegationToSql(t *testing.T) {
 	assert.Equal(t, "NOT (NOT EXISTS (SELECT 1 FROM orders WHERE status = ?))", sql)
 	assert.Equal(t, []any{"active"}, args)
 }
+
+// Tests for issue #351 / #285: Misplaced parameters with window functions /
+// complex subqueries. Wrapper types (Alias, Expr, ConcatExpr) must implement
+// rawSqlizer so that outer queries get raw ? placeholders from nested builders,
+// preventing double placeholder formatting.
+
+func TestAliasSubqueryDollarPlaceholders(t *testing.T) {
+	// Alias wrapping a subquery with Dollar format must produce correct
+	// sequential numbering when used inside an outer Dollar-formatted query.
+	inner := Select("id").From("orders").Where(Eq{"status": "active"}).PlaceholderFormat(Dollar)
+	outer := Select("name").
+		Column(Alias(inner, "order_ids")).
+		From("users").
+		Where(Eq{"age": 25}).
+		PlaceholderFormat(Dollar)
+
+	sql, args, err := outer.ToSQL()
+	assert.NoError(t, err)
+	assert.Equal(t, "SELECT name, (SELECT id FROM orders WHERE status = $1) AS order_ids FROM users WHERE age = $2", sql)
+	assert.Equal(t, []any{"active", 25}, args)
+}
+
+func TestAliasSubqueryDollarMultipleColumns(t *testing.T) {
+	// Multiple aliased subqueries in columns with Dollar format.
+	sub1 := Select("COUNT(*)").From("orders").Where(Eq{"user_id": 1}).PlaceholderFormat(Dollar)
+	sub2 := Select("SUM(amount)").From("payments").Where(Eq{"user_id": 2}).PlaceholderFormat(Dollar)
+	outer := Select("name").
+		Column(Alias(sub1, "order_count")).
+		Column(Alias(sub2, "total_paid")).
+		From("users").
+		Where(Eq{"active": true}).
+		PlaceholderFormat(Dollar)
+
+	sql, args, err := outer.ToSQL()
+	assert.NoError(t, err)
+	assert.Equal(t,
+		"SELECT name, (SELECT COUNT(*) FROM orders WHERE user_id = $1) AS order_count, "+
+			"(SELECT SUM(amount) FROM payments WHERE user_id = $2) AS total_paid "+
+			"FROM users WHERE active = $3",
+		sql)
+	assert.Equal(t, []any{1, 2, true}, args)
+}
+
+func TestExprSubqueryDollarPlaceholders(t *testing.T) {
+	// Expr with a Sqlizer arg (subquery) in Dollar mode must produce correct
+	// sequential numbering.
+	inner := Select("MAX(score)").From("scores").Where(Eq{"game": "chess"}).PlaceholderFormat(Dollar)
+	outer := Select("*").
+		From("users").
+		Where(Expr("score > (?)", inner)).
+		Where(Eq{"active": true}).
+		PlaceholderFormat(Dollar)
+
+	sql, args, err := outer.ToSQL()
+	assert.NoError(t, err)
+	assert.Equal(t, "SELECT * FROM users WHERE score > (SELECT MAX(score) FROM scores WHERE game = $1) AND active = $2", sql)
+	assert.Equal(t, []any{"chess", true}, args)
+}
+
+func TestExprMultipleSubqueryArgsDollar(t *testing.T) {
+	// Expr with multiple Sqlizer args in Dollar mode.
+	sub1 := Select("MIN(price)").From("products").Where(Eq{"cat": "A"}).PlaceholderFormat(Dollar)
+	sub2 := Select("MAX(price)").From("products").Where(Eq{"cat": "B"}).PlaceholderFormat(Dollar)
+	outer := Select("*").
+		From("items").
+		Where(Expr("price BETWEEN (?) AND (?)", sub1, sub2)).
+		Where(Eq{"in_stock": true}).
+		PlaceholderFormat(Dollar)
+
+	sql, args, err := outer.ToSQL()
+	assert.NoError(t, err)
+	assert.Equal(t,
+		"SELECT * FROM items "+
+			"WHERE price BETWEEN (SELECT MIN(price) FROM products WHERE cat = $1) "+
+			"AND (SELECT MAX(price) FROM products WHERE cat = $2) "+
+			"AND in_stock = $3",
+		sql)
+	assert.Equal(t, []any{"A", "B", true}, args)
+}
+
+func TestConcatExprSubqueryDollarPlaceholders(t *testing.T) {
+	// ConcatExpr with a Sqlizer that has Dollar format must produce correct
+	// sequential numbering when nested inside an outer Dollar-formatted query.
+	inner := Select("name").From("categories").Where(Eq{"id": 5}).PlaceholderFormat(Dollar)
+	ce := ConcatExpr("COALESCE(cat_name, (", inner, "))")
+	outer := Select("id").
+		Column(ce).
+		From("products").
+		Where(Eq{"active": true}).
+		PlaceholderFormat(Dollar)
+
+	sql, args, err := outer.ToSQL()
+	assert.NoError(t, err)
+	assert.Equal(t,
+		"SELECT id, COALESCE(cat_name, (SELECT name FROM categories WHERE id = $1)) "+
+			"FROM products WHERE active = $2",
+		sql)
+	assert.Equal(t, []any{5, true}, args)
+}
+
+func TestAliasConcatExprNestedDollar(t *testing.T) {
+	// Alias wrapping a ConcatExpr that contains a Dollar-formatted subquery.
+	inner := Select("AVG(rating)").From("reviews").Where(Eq{"product_id": 10}).PlaceholderFormat(Dollar)
+	ce := ConcatExpr("COALESCE(", inner, ", 0)")
+	outer := Select("name").
+		Column(Alias(ce, "avg_rating")).
+		From("products").
+		Where(Eq{"active": true}).
+		PlaceholderFormat(Dollar)
+
+	sql, args, err := outer.ToSQL()
+	assert.NoError(t, err)
+	assert.Equal(t,
+		"SELECT name, (COALESCE(SELECT AVG(rating) FROM reviews WHERE product_id = $1, 0)) AS avg_rating "+
+			"FROM products WHERE active = $2",
+		sql)
+	assert.Equal(t, []any{10, true}, args)
+}
+
+func TestPrefixExprSubqueryDollarPlaceholders(t *testing.T) {
+	// Prefix/Suffix with Expr wrapping a subquery in Dollar mode.
+	sub := Select("id").From("active_users").Where(Eq{"status": "active"}).PlaceholderFormat(Dollar)
+	outer := Select("*").
+		Prefix("WITH cte AS (?)", sub).
+		From("cte").
+		Where(Eq{"role": "admin"}).
+		PlaceholderFormat(Dollar)
+
+	sql, args, err := outer.ToSQL()
+	assert.NoError(t, err)
+	assert.Equal(t,
+		"WITH cte AS (SELECT id FROM active_users WHERE status = $1) "+
+			"SELECT * FROM cte WHERE role = $2",
+		sql)
+	assert.Equal(t, []any{"active", "admin"}, args)
+}
+
+func TestSuffixExprSubqueryDollarPlaceholders(t *testing.T) {
+	// Suffix with Expr wrapping a subquery in Dollar mode.
+	sub := Select("1").From("audit").Where(Eq{"user_id": 99}).PlaceholderFormat(Dollar)
+	outer := Select("*").
+		From("users").
+		Where(Eq{"active": true}).
+		Suffix("AND EXISTS (?)", sub).
+		PlaceholderFormat(Dollar)
+
+	sql, args, err := outer.ToSQL()
+	assert.NoError(t, err)
+	assert.Equal(t,
+		"SELECT * FROM users WHERE active = $1 AND EXISTS (SELECT 1 FROM audit WHERE user_id = $2)",
+		sql)
+	assert.Equal(t, []any{true, 99}, args)
+}
+
+func TestColumnExprSubqueryDollarPlaceholders(t *testing.T) {
+	// Column with Expr("(?) AS alias", subquery) pattern in Dollar mode.
+	sub := Select("COUNT(*)").From("orders").Where(Eq{"user_id": 7}).PlaceholderFormat(Dollar)
+	outer := Select("name").
+		Column(Expr("(?) AS order_count", sub)).
+		From("users").
+		Where(Eq{"active": true}).
+		PlaceholderFormat(Dollar)
+
+	sql, args, err := outer.ToSQL()
+	assert.NoError(t, err)
+	assert.Equal(t,
+		"SELECT name, (SELECT COUNT(*) FROM orders WHERE user_id = $1) AS order_count "+
+			"FROM users WHERE active = $2",
+		sql)
+	assert.Equal(t, []any{7, true}, args)
+}
+
+func TestComplexNestedSubqueriesDollarPlaceholders(t *testing.T) {
+	// Complex scenario: multiple subqueries in different positions (columns,
+	// WHERE, prefix, suffix) all with Dollar format — tests global placeholder
+	// ordering across the entire query.
+	colSub := Select("COUNT(*)").From("orders").Where(Eq{"uid": 1}).PlaceholderFormat(Dollar)
+	whereSub := Select("id").From("blocked").Where(Eq{"reason": "spam"}).PlaceholderFormat(Dollar)
+	prefixSub := Select("id").From("vip").Where(Eq{"level": 3}).PlaceholderFormat(Dollar)
+
+	outer := Select("name").
+		Column(Alias(colSub, "cnt")).
+		Prefix("WITH vips AS (?)", prefixSub).
+		From("users").
+		Where(Eq{"active": true}).
+		Where(Expr("id NOT IN (?)", whereSub)).
+		PlaceholderFormat(Dollar)
+
+	sql, args, err := outer.ToSQL()
+	assert.NoError(t, err)
+	assert.Equal(t,
+		"WITH vips AS (SELECT id FROM vip WHERE level = $1) "+
+			"SELECT name, (SELECT COUNT(*) FROM orders WHERE uid = $2) AS cnt "+
+			"FROM users WHERE active = $3 AND id NOT IN (SELECT id FROM blocked WHERE reason = $4)",
+		sql)
+	assert.Equal(t, []any{3, 1, true, "spam"}, args)
+}
+
+func TestExprRawSqlizerInterface(t *testing.T) {
+	// Verify that expr implements rawSqlizer.
+	e := Expr("x = ?", 1)
+	_, ok := e.(rawSqlizer)
+	assert.True(t, ok, "expr should implement rawSqlizer")
+}
+
+func TestAliasRawSqlizerInterface(t *testing.T) {
+	// Verify that aliasExpr implements rawSqlizer.
+	a := Alias(Expr("1"), "one")
+	_, ok := a.(rawSqlizer)
+	assert.True(t, ok, "aliasExpr should implement rawSqlizer")
+}
+
+func TestConcatExprRawSqlizerInterface(t *testing.T) {
+	// Verify that concatExpr implements rawSqlizer.
+	ce := ConcatExpr("a", Expr("b"))
+	_, ok := ce.(rawSqlizer)
+	assert.True(t, ok, "concatExpr should implement rawSqlizer")
+}
