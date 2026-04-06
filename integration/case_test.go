@@ -274,3 +274,120 @@ func TestCaseBuilderImmutability(t *testing.T) {
 	assert.Contains(t, sql2, "'z'")
 	assert.NotContains(t, sql2, "'y'")
 }
+
+// ---------------------------------------------------------------------------
+// Non-string values in CASE WHEN/THEN/ELSE (GitHub #388)
+// ---------------------------------------------------------------------------
+
+func TestCaseWithIntThenValue(t *testing.T) {
+	// Arrange — CASE WHEN category = 'fruit' THEN 1 ELSE 0 END
+	caseExpr := sqrl.Case().
+		When("category = 'fruit'", 1).
+		Else(0)
+
+	q := sb.Select("name").Column(sqrl.Alias(caseExpr, "is_fruit")).
+		From("sq_items").
+		Where(sqrl.Eq{"id": 1})
+
+	// Act
+	rows, err := q.Query()
+	require.NoError(t, err)
+	defer rows.Close()
+
+	require.True(t, rows.Next())
+	var name string
+	var isFruit int
+	require.NoError(t, rows.Scan(&name, &isFruit))
+
+	// Assert — apple is fruit → 1
+	assert.Equal(t, "apple", name)
+	assert.Equal(t, 1, isFruit)
+}
+
+func TestCaseWithIntThenElseValues(t *testing.T) {
+	// Arrange — non-fruit should get ELSE value 0
+	caseExpr := sqrl.Case().
+		When("category = 'fruit'", 1).
+		Else(0)
+
+	q := sb.Select("name").Column(sqrl.Alias(caseExpr, "is_fruit")).
+		From("sq_items").
+		Where(sqrl.Eq{"id": 4}) // donut is pastry
+
+	// Act
+	rows, err := q.Query()
+	require.NoError(t, err)
+	defer rows.Close()
+
+	require.True(t, rows.Next())
+	var name string
+	var isFruit int
+	require.NoError(t, rows.Scan(&name, &isFruit))
+
+	// Assert — donut is not fruit → 0
+	assert.Equal(t, "donut", name)
+	assert.Equal(t, 0, isFruit)
+}
+
+func TestCaseWithIntWhenValue(t *testing.T) {
+	// Arrange — CASE id WHEN ? THEN 'match' ELSE 'no match' END
+	// Using int in the WHEN position.
+	caseExpr := sqrl.Case("id").
+		When(1, "'found'").
+		Else("'not found'")
+
+	q := sb.Select("name").Column(sqrl.Alias(caseExpr, "status")).
+		From("sq_items").
+		Where(sqrl.Eq{"id": 1})
+
+	// Act
+	rows, err := q.Query()
+	require.NoError(t, err)
+	defer rows.Close()
+
+	require.True(t, rows.Next())
+	var name, status string
+	require.NoError(t, rows.Scan(&name, &status))
+
+	// Assert
+	assert.Equal(t, "apple", name)
+	assert.Equal(t, "found", status)
+}
+
+func TestCaseWithMixedNonStringValues(t *testing.T) {
+	// Arrange — mix of int THEN values across multiple WHEN clauses
+	caseExpr := sqrl.Case().
+		When("price < 80", 1).
+		When("price < 150", 2).
+		Else(3)
+
+	q := sb.Select("name").Column(sqrl.Alias(caseExpr, "tier")).
+		From("sq_items").
+		OrderBy("id")
+
+	// Act
+	rows, err := q.Query()
+	require.NoError(t, err)
+	defer rows.Close()
+
+	type result struct {
+		Name string
+		Tier int
+	}
+	var results []result
+	for rows.Next() {
+		var r result
+		require.NoError(t, rows.Scan(&r.Name, &r.Tier))
+		results = append(results, r)
+	}
+
+	// Assert
+	assert.Equal(t, []result{
+		{"apple", 2},    // 100 → tier 2
+		{"banana", 1},   // 50 → tier 1
+		{"carrot", 1},   // 75 → tier 1
+		{"donut", 3},    // 200 → tier 3
+		{"eggplant", 3}, // 150 → tier 3 (not < 150)
+		{"mystery", 2},  // 99 → tier 2
+	}, results)
+}

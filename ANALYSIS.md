@@ -375,11 +375,21 @@ The fix replaces `vs.ToSQL()` with `nestedToSQL(vs)` in the SET clause handling,
 
 **Files modified:** `expr.go`, `expr_test.go`, `integration/expr_test.go`. Full unit test coverage including `Alias` with Dollar subquery (single and multiple), `Expr` with Dollar subquery (single and multiple args), `ConcatExpr` with Dollar subquery, `Alias(ConcatExpr(...))` nesting, `Prefix`/`Suffix` with Expr-wrapped subqueries, complex multi-position queries with subqueries in columns/WHERE/prefix/suffix, `rawSqlizer` interface verification for all three types, and Colon/AtP format correctness. Integration tests (SQLite) cover: aliased subquery execution, Dollar placeholder SQL generation for all patterns, multi-column aliased subqueries, `Expr` subquery in WHERE, `ConcatExpr` subquery execution, prefix/suffix subqueries, complex multi-position Dollar queries, and Colon/AtP placeholder verification.
 
-### 3.6 🟡 HIGH — `CaseBuilder` Rejects Non-String Values (`int`) in `When`/`Then`
+### 3.6 ✅ HIGH — `CaseBuilder` Rejects Non-String Values (`int`) in `When`/`Then` — **DONE**
 
 > **GitHub [#388](https://github.com/Masterminds/squirrel/issues/388)** — "expected string or Sqlizer, not int" when using CASE WHEN (opened 2025-03-10).
 
-`Case("order_no").When("ORD001", 500)` fails because `newPart()` only accepts `string` or `Sqlizer`. Integer (and other non-string) literal values should be supported — either by auto-wrapping them in `Expr("?", val)` or by accepting `interface{}` in the WHEN/THEN position.
+~~`Case("order_no").When("ORD001", 500)` fails because `newPart()` only accepts `string` or `Sqlizer`. Integer (and other non-string) literal values should be supported — either by auto-wrapping them in `Expr("?", val)` or by accepting `interface{}` in the WHEN/THEN position.~~
+
+**Implemented** (April 2026) by modifying `newPart()` in `part.go` to handle non-string, non-Sqlizer values. The `default` case in `part.ToSQL()` now auto-wraps such values as parameterized placeholders (`"?"` with the value as a bound arg) instead of returning an error. This enables `int`, `float64`, `bool`, and other Go types to be used directly in `CaseBuilder.When()`, `CaseBuilder.Else()`, and `CaseBuilder.what()` positions.
+
+**Examples now work:**
+- `Case("order_no").When("ORD001", 500)` — int THEN value
+- `Case("status").When(1, "active")` — int WHEN value
+- `Case().When(Eq{"active": true}, 1).Else(0)` — int THEN and ELSE values
+- `Case("score").When(1.5, "low")` — float64 WHEN value
+
+**Files modified:** `part.go`, `case_test.go`, `integration/case_test.go`. Unit tests cover int, float64, bool, and mixed non-string values in WHEN, THEN, and ELSE positions. Integration tests verify correct query execution against real databases with int THEN/ELSE values, int WHEN values, and mixed non-string values across multiple WHEN clauses.
 
 ### 3.7 🟡 HIGH — Conditional Insert Columns/Values Produce Invalid SQL
 
@@ -471,7 +481,7 @@ Building an insert incrementally — adding a column+value pair after the initia
 | 🔴 High | Dollar placeholder misnumbering with subqueries in `Update.Set` | [#326](https://github.com/Masterminds/squirrel/issues/326) | Bug |
 | ✅ Fixed | Misplaced params with window functions / multiple subqueries | [#351](https://github.com/Masterminds/squirrel/issues/351), [#285](https://github.com/Masterminds/squirrel/issues/285) | Bug |
 | ✅ Fixed | `nil` Or/And clause silently produces `WHERE (1=0)` | [#382](https://github.com/Masterminds/squirrel/issues/382) | Bug |
-| 🟡 High | `CaseBuilder` rejects non-string `int` values in When/Then | [#388](https://github.com/Masterminds/squirrel/issues/388) | Bug |
+| ✅ Fixed | `CaseBuilder` rejects non-string `int` values in When/Then | [#388](https://github.com/Masterminds/squirrel/issues/388) | Bug |
 | 🟡 High | Conditional insert columns/values produce invalid SQL | [#336](https://github.com/Masterminds/squirrel/issues/336) | Bug |
 | ✅ Fixed | Multiple `Distinct()` calls produce invalid SQL | [#281](https://github.com/Masterminds/squirrel/issues/281) | Bug |
 | ✅ Fixed | Multi-key `Eq` inside `Or` missing parentheses | [#269](https://github.com/Masterminds/squirrel/issues/269) | Bug |

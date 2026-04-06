@@ -2,7 +2,6 @@ package squirrel
 
 import (
 	"bytes"
-	"fmt"
 	"io"
 )
 
@@ -25,7 +24,10 @@ func (p part) ToSQL() (sql string, args []any, err error) {
 		sql = pred
 		args = p.args
 	default:
-		err = fmt.Errorf("expected string or Sqlizer, not %T", pred)
+		// Auto-wrap non-string, non-Sqlizer values (e.g. int, float64, bool)
+		// as parameterized placeholders so they can be used in CASE WHEN/THEN.
+		sql = "?"
+		args = []any{pred}
 	}
 	return
 }
