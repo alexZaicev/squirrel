@@ -48,11 +48,11 @@ func TestRunWithTx(t *testing.T) {
 
 type fakeBaseRunner struct{}
 
-func (fakeBaseRunner) Exec(query string, args ...interface{}) (sql.Result, error) {
+func (fakeBaseRunner) Exec(query string, args ...any) (sql.Result, error) {
 	return nil, nil
 }
 
-func (fakeBaseRunner) Query(query string, args ...interface{}) (*sql.Rows, error) {
+func (fakeBaseRunner) Query(query string, args ...any) (*sql.Rows, error) {
 	return nil, nil
 }
 
@@ -76,6 +76,6 @@ func TestStatementBuilderWhere(t *testing.T) {
 	expectedSQL := "SELECT test WHERE x = ? AND y = ?"
 	assert.Equal(t, expectedSQL, sql)
 
-	expectedArgs := []interface{}{1, 2}
+	expectedArgs := []any{1, 2}
 	assert.Equal(t, expectedArgs, args)
 }

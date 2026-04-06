@@ -24,7 +24,7 @@ func TestInsertBuilderToSql(t *testing.T) {
 		"RETURNING ?"
 	assert.Equal(t, expectedSQL, sql)
 
-	expectedArgs := []interface{}{0, 1, 2, 3, 4, 5}
+	expectedArgs := []any{0, 1, 2, 3, 4, 5}
 	assert.Equal(t, expectedArgs, args)
 }
 
@@ -82,7 +82,7 @@ func TestInsertBuilderSetMap(t *testing.T) {
 	expectedSQL := "INSERT INTO table (field1,field2,field3) VALUES (?,?,?)"
 	assert.Equal(t, expectedSQL, sql)
 
-	expectedArgs := []interface{}{1, 2, 3}
+	expectedArgs := []any{1, 2, 3}
 	assert.Equal(t, expectedArgs, args)
 }
 
@@ -96,7 +96,7 @@ func TestInsertBuilderSelect(t *testing.T) {
 	expectedSQL := "INSERT INTO table2 (field1) SELECT field1 FROM table1 WHERE field1 = ?"
 	assert.Equal(t, expectedSQL, sql)
 
-	expectedArgs := []interface{}{1}
+	expectedArgs := []any{1}
 	assert.Equal(t, expectedArgs, args)
 }
 

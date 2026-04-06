@@ -14,13 +14,13 @@ type DBStub struct {
 	PrepareCount   int
 
 	LastExecSQL  string
-	LastExecArgs []interface{}
+	LastExecArgs []any
 
 	LastQuerySQL  string
-	LastQueryArgs []interface{}
+	LastQueryArgs []any
 
 	LastQueryRowSQL  string
-	LastQueryRowArgs []interface{}
+	LastQueryRowArgs []any
 }
 
 var ErrStub = fmt.Errorf("this is a stub; this is only a stub")
@@ -31,19 +31,19 @@ func (s *DBStub) Prepare(query string) (*sql.Stmt, error) {
 	return nil, nil
 }
 
-func (s *DBStub) Exec(query string, args ...interface{}) (sql.Result, error) {
+func (s *DBStub) Exec(query string, args ...any) (sql.Result, error) {
 	s.LastExecSQL = query
 	s.LastExecArgs = args
 	return nil, nil
 }
 
-func (s *DBStub) Query(query string, args ...interface{}) (*sql.Rows, error) {
+func (s *DBStub) Query(query string, args ...any) (*sql.Rows, error) {
 	s.LastQuerySQL = query
 	s.LastQueryArgs = args
 	return nil, nil
 }
 
-func (s *DBStub) QueryRow(query string, args ...interface{}) RowScanner {
+func (s *DBStub) QueryRow(query string, args ...any) RowScanner {
 	s.LastQueryRowSQL = query
 	s.LastQueryRowArgs = args
 	return &Row{RowScanner: &RowStub{}}

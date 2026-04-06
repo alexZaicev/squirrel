@@ -15,7 +15,7 @@ func init() {
 // without constant checks for errors that may come from Sqlizer
 type sqlizerBuffer struct {
 	bytes.Buffer
-	args []interface{}
+	args []any
 	err  error
 }
 
@@ -26,7 +26,7 @@ func (b *sqlizerBuffer) WriteSQL(item Sqlizer) {
 	}
 
 	var str string
-	var args []interface{}
+	var args []any
 	str, args, b.err = nestedToSQL(item)
 
 	if b.err != nil {
@@ -38,7 +38,7 @@ func (b *sqlizerBuffer) WriteSQL(item Sqlizer) {
 	b.args = append(b.args, args...)
 }
 
-func (b *sqlizerBuffer) ToSQL() (string, []interface{}, error) {
+func (b *sqlizerBuffer) ToSQL() (string, []any, error) {
 	return b.String(), b.args, b.err
 }
 
@@ -48,7 +48,7 @@ type whenPart struct {
 	then Sqlizer
 }
 
-func newWhenPart(when interface{}, then interface{}) whenPart {
+func newWhenPart(when any, then any) whenPart {
 	return whenPart{newPart(when), newPart(then)}
 }
 
@@ -60,7 +60,7 @@ type caseData struct {
 }
 
 // ToSQL implements Sqlizer
-func (d *caseData) ToSQL() (sqlStr string, args []interface{}, err error) {
+func (d *caseData) ToSQL() (sqlStr string, args []any, err error) {
 	if len(d.WhenParts) == 0 {
 		err = errors.New("case expression must contain at lease one WHEN clause")
 
@@ -95,14 +95,14 @@ func (d *caseData) ToSQL() (sqlStr string, args []interface{}, err error) {
 type CaseBuilder builder.Builder
 
 // ToSQL builds the query into a SQL string and bound args.
-func (b CaseBuilder) ToSQL() (string, []interface{}, error) {
+func (b CaseBuilder) ToSQL() (string, []any, error) {
 	data := builder.GetStruct(b).(caseData)
 	return data.ToSQL()
 }
 
 // MustSQL builds the query into a SQL string and bound args.
 // It panics if there are any errors.
-func (b CaseBuilder) MustSQL() (string, []interface{}) {
+func (b CaseBuilder) MustSQL() (string, []any) {
 	sql, args, err := b.ToSQL()
 	if err != nil {
 		panic(err)
@@ -111,18 +111,18 @@ func (b CaseBuilder) MustSQL() (string, []interface{}) {
 }
 
 // what sets optional value for CASE construct "CASE [value] ..."
-func (b CaseBuilder) what(expr interface{}) CaseBuilder {
+func (b CaseBuilder) what(expr any) CaseBuilder {
 	return builder.Set(b, "What", newPart(expr)).(CaseBuilder)
 }
 
 // When adds "WHEN ... THEN ..." part to CASE construct
-func (b CaseBuilder) When(when interface{}, then interface{}) CaseBuilder {
+func (b CaseBuilder) When(when any, then any) CaseBuilder {
 	// TODO: performance hint: replace slice of WhenPart with just slice of parts
 	// where even indices of the slice belong to "when"s and odd indices belong to "then"s
 	return builder.Append(b, "WhenParts", newWhenPart(when, then)).(CaseBuilder)
 }
 
 // Else sets optional "ELSE ..." part for CASE construct
-func (b CaseBuilder) Else(expr interface{}) CaseBuilder {
+func (b CaseBuilder) Else(expr any) CaseBuilder {
 	return builder.Set(b, "Else", newPart(expr)).(CaseBuilder)
 }

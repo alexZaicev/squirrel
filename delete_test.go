@@ -24,7 +24,7 @@ func TestDeleteBuilderToSql(t *testing.T) {
 		"RETURNING ?"
 	assert.Equal(t, expectedSQL, sql)
 
-	expectedArgs := []interface{}{0, 1, 4}
+	expectedArgs := []any{0, 1, 4}
 	assert.Equal(t, expectedArgs, args)
 }
 

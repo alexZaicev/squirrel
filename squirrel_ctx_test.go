@@ -16,19 +16,19 @@ func (s *DBStub) PrepareContext(ctx context.Context, query string) (*sql.Stmt, e
 	return nil, nil
 }
 
-func (s *DBStub) ExecContext(ctx context.Context, query string, args ...interface{}) (sql.Result, error) {
+func (s *DBStub) ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error) {
 	s.LastExecSQL = query
 	s.LastExecArgs = args
 	return nil, nil
 }
 
-func (s *DBStub) QueryContext(ctx context.Context, query string, args ...interface{}) (*sql.Rows, error) {
+func (s *DBStub) QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error) {
 	s.LastQuerySQL = query
 	s.LastQueryArgs = args
 	return nil, nil
 }
 
-func (s *DBStub) QueryRowContext(ctx context.Context, query string, args ...interface{}) RowScanner {
+func (s *DBStub) QueryRowContext(ctx context.Context, query string, args ...any) RowScanner {
 	s.LastQueryRowSQL = query
 	s.LastQueryRowArgs = args
 	return &Row{RowScanner: &RowStub{}}

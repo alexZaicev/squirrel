@@ -34,7 +34,7 @@ func TestUpdateBuilderToSql(t *testing.T) {
 		"RETURNING ?"
 	assert.Equal(t, expectedSQL, sql)
 
-	expectedArgs := []interface{}{0, 1, 2, "foo", "bar", 3, 6}
+	expectedArgs := []any{0, 1, 2, "foo", "bar", 3, 6}
 	assert.Equal(t, expectedArgs, args)
 }
 

@@ -15,21 +15,21 @@ var ErrNoContextSupport = errors.New("DB does not support Context")
 //
 // Exec executes the given query as implemented by database/sql.ExecContext.
 type ExecerContext interface {
-	ExecContext(ctx context.Context, query string, args ...interface{}) (sql.Result, error)
+	ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error)
 }
 
 // QueryerContext is the interface that wraps the QueryContext method.
 //
 // QueryContext executes the given query as implemented by database/sql.QueryContext.
 type QueryerContext interface {
-	QueryContext(ctx context.Context, query string, args ...interface{}) (*sql.Rows, error)
+	QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error)
 }
 
 // QueryRowerContext is the interface that wraps the QueryRowContext method.
 //
 // QueryRowContext executes the given query as implemented by database/sql.QueryRowContext.
 type QueryRowerContext interface {
-	QueryRowContext(ctx context.Context, query string, args ...interface{}) RowScanner
+	QueryRowContext(ctx context.Context, query string, args ...any) RowScanner
 }
 
 // RunnerContext groups the Runner interface, along with the Context versions of each of
@@ -51,20 +51,20 @@ func WrapStdSQLCtx(stdSQLCtx StdSQLCtx) RunnerContext {
 // versions of those methods, and other types that wrap these methods.
 type StdSQLCtx interface {
 	StdSQL
-	QueryContext(context.Context, string, ...interface{}) (*sql.Rows, error)
-	QueryRowContext(context.Context, string, ...interface{}) *sql.Row
-	ExecContext(context.Context, string, ...interface{}) (sql.Result, error)
+	QueryContext(context.Context, string, ...any) (*sql.Rows, error)
+	QueryRowContext(context.Context, string, ...any) *sql.Row
+	ExecContext(context.Context, string, ...any) (sql.Result, error)
 }
 
 type stdsqlCtxRunner struct {
 	StdSQLCtx
 }
 
-func (r *stdsqlCtxRunner) QueryRow(query string, args ...interface{}) RowScanner {
+func (r *stdsqlCtxRunner) QueryRow(query string, args ...any) RowScanner {
 	return r.StdSQLCtx.QueryRow(query, args...)
 }
 
-func (r *stdsqlCtxRunner) QueryRowContext(ctx context.Context, query string, args ...interface{}) RowScanner {
+func (r *stdsqlCtxRunner) QueryRowContext(ctx context.Context, query string, args ...any) RowScanner {
 	return r.StdSQLCtx.QueryRowContext(ctx, query, args...)
 }
 

@@ -15,7 +15,7 @@ func TestConcatExpr(t *testing.T) {
 	expectedSQL := "COALESCE(name,CONCAT(?,' ',?))"
 	assert.Equal(t, expectedSQL, sql)
 
-	expectedArgs := []interface{}{"f", "l"}
+	expectedArgs := []any{"f", "l"}
 	assert.Equal(t, expectedArgs, args)
 }
 
@@ -34,7 +34,7 @@ func TestEqToSql(t *testing.T) {
 	expectedSQL := "id = ?"
 	assert.Equal(t, expectedSQL, sql)
 
-	expectedArgs := []interface{}{1}
+	expectedArgs := []any{1}
 	assert.Equal(t, expectedArgs, args)
 }
 
@@ -55,7 +55,7 @@ func TestEqInToSql(t *testing.T) {
 	expectedSQL := "id IN (?,?,?)"
 	assert.Equal(t, expectedSQL, sql)
 
-	expectedArgs := []interface{}{1, 2, 3}
+	expectedArgs := []any{1, 2, 3}
 	assert.Equal(t, expectedArgs, args)
 }
 
@@ -67,7 +67,7 @@ func TestNotEqToSql(t *testing.T) {
 	expectedSQL := "id <> ?"
 	assert.Equal(t, expectedSQL, sql)
 
-	expectedArgs := []interface{}{1}
+	expectedArgs := []any{1}
 	assert.Equal(t, expectedArgs, args)
 }
 
@@ -79,7 +79,7 @@ func TestEqNotInToSql(t *testing.T) {
 	expectedSQL := "id NOT IN (?,?,?)"
 	assert.Equal(t, expectedSQL, sql)
 
-	expectedArgs := []interface{}{1, 2, 3}
+	expectedArgs := []any{1, 2, 3}
 	assert.Equal(t, expectedArgs, args)
 }
 
@@ -91,7 +91,7 @@ func TestEqInEmptyToSql(t *testing.T) {
 	expectedSQL := "(1=0)"
 	assert.Equal(t, expectedSQL, sql)
 
-	expectedArgs := []interface{}{}
+	expectedArgs := []any{}
 	assert.Equal(t, expectedArgs, args)
 }
 
@@ -103,7 +103,7 @@ func TestNotEqInEmptyToSql(t *testing.T) {
 	expectedSQL := "(1=1)"
 	assert.Equal(t, expectedSQL, sql)
 
-	expectedArgs := []interface{}{}
+	expectedArgs := []any{}
 	assert.Equal(t, expectedArgs, args)
 }
 
@@ -115,7 +115,7 @@ func TestEqBytesToSql(t *testing.T) {
 	expectedSQL := "id = ?"
 	assert.Equal(t, expectedSQL, sql)
 
-	expectedArgs := []interface{}{[]byte("test")}
+	expectedArgs := []any{[]byte("test")}
 	assert.Equal(t, expectedArgs, args)
 }
 
@@ -127,7 +127,7 @@ func TestLtToSql(t *testing.T) {
 	expectedSQL := "id < ?"
 	assert.Equal(t, expectedSQL, sql)
 
-	expectedArgs := []interface{}{1}
+	expectedArgs := []any{1}
 	assert.Equal(t, expectedArgs, args)
 }
 
@@ -139,7 +139,7 @@ func TestLtOrEqToSql(t *testing.T) {
 	expectedSQL := "id <= ?"
 	assert.Equal(t, expectedSQL, sql)
 
-	expectedArgs := []interface{}{1}
+	expectedArgs := []any{1}
 	assert.Equal(t, expectedArgs, args)
 }
 
@@ -151,7 +151,7 @@ func TestGtToSql(t *testing.T) {
 	expectedSQL := "id > ?"
 	assert.Equal(t, expectedSQL, sql)
 
-	expectedArgs := []interface{}{1}
+	expectedArgs := []any{1}
 	assert.Equal(t, expectedArgs, args)
 }
 
@@ -163,7 +163,7 @@ func TestGtOrEqToSql(t *testing.T) {
 	expectedSQL := "id >= ?"
 	assert.Equal(t, expectedSQL, sql)
 
-	expectedArgs := []interface{}{1}
+	expectedArgs := []any{1}
 	assert.Equal(t, expectedArgs, args)
 }
 
@@ -203,7 +203,7 @@ func TestNullTypeString(t *testing.T) {
 	sql, args, err = b.ToSQL()
 
 	assert.NoError(t, err)
-	assert.Equal(t, []interface{}{"Name"}, args)
+	assert.Equal(t, []any{"Name"}, args)
 	assert.Equal(t, "name = ?", sql)
 }
 
@@ -224,7 +224,7 @@ func TestNullTypeInt64(t *testing.T) {
 	sql, args, err = b.ToSQL()
 
 	assert.NoError(t, err)
-	assert.Equal(t, []interface{}{int64(10)}, args)
+	assert.Equal(t, []any{int64(10)}, args)
 	assert.Equal(t, "user_id = ?", sql)
 }
 
@@ -278,14 +278,14 @@ func TestNotNilPointer(t *testing.T) {
 	sql, args, err := eq.ToSQL()
 
 	assert.NoError(t, err)
-	assert.Equal(t, []interface{}{"Name"}, args)
+	assert.Equal(t, []any{"Name"}, args)
 	assert.Equal(t, "name = ?", sql)
 
 	neq := NotEq{"name": name}
 	sql, args, err = neq.ToSQL()
 
 	assert.NoError(t, err)
-	assert.Equal(t, []interface{}{"Name"}, args)
+	assert.Equal(t, []any{"Name"}, args)
 	assert.Equal(t, "name <> ?", sql)
 
 	s := []int{1, 2, 3}
@@ -293,13 +293,13 @@ func TestNotNilPointer(t *testing.T) {
 	eq = Eq{"id": ids}
 	sql, args, err = eq.ToSQL()
 	assert.NoError(t, err)
-	assert.Equal(t, []interface{}{1, 2, 3}, args)
+	assert.Equal(t, []any{1, 2, 3}, args)
 	assert.Equal(t, "id IN (?,?,?)", sql)
 
 	neq = NotEq{"id": ids}
 	sql, args, err = neq.ToSQL()
 	assert.NoError(t, err)
-	assert.Equal(t, []interface{}{1, 2, 3}, args)
+	assert.Equal(t, []any{1, 2, 3}, args)
 	assert.Equal(t, "id NOT IN (?,?,?)", sql)
 
 	a := [3]int{1, 2, 3}
@@ -307,13 +307,13 @@ func TestNotNilPointer(t *testing.T) {
 	eq = Eq{"id": ida}
 	sql, args, err = eq.ToSQL()
 	assert.NoError(t, err)
-	assert.Equal(t, []interface{}{1, 2, 3}, args)
+	assert.Equal(t, []any{1, 2, 3}, args)
 	assert.Equal(t, "id IN (?,?,?)", sql)
 
 	neq = NotEq{"id": ida}
 	sql, args, err = neq.ToSQL()
 	assert.NoError(t, err)
-	assert.Equal(t, []interface{}{1, 2, 3}, args)
+	assert.Equal(t, []any{1, 2, 3}, args)
 	assert.Equal(t, "id NOT IN (?,?,?)", sql)
 }
 
@@ -324,7 +324,7 @@ func TestEmptyAndToSql(t *testing.T) {
 	expectedSQL := "(1=1)"
 	assert.Equal(t, expectedSQL, sql)
 
-	expectedArgs := []interface{}{}
+	expectedArgs := []any{}
 	assert.Equal(t, expectedArgs, args)
 }
 
@@ -335,7 +335,7 @@ func TestEmptyOrToSql(t *testing.T) {
 	expectedSQL := "(1=0)"
 	assert.Equal(t, expectedSQL, sql)
 
-	expectedArgs := []interface{}{}
+	expectedArgs := []any{}
 	assert.Equal(t, expectedArgs, args)
 }
 
@@ -347,7 +347,7 @@ func TestLikeToSql(t *testing.T) {
 	expectedSQL := "name LIKE ?"
 	assert.Equal(t, expectedSQL, sql)
 
-	expectedArgs := []interface{}{"%irrel"}
+	expectedArgs := []any{"%irrel"}
 	assert.Equal(t, expectedArgs, args)
 }
 
@@ -359,7 +359,7 @@ func TestNotLikeToSql(t *testing.T) {
 	expectedSQL := "name NOT LIKE ?"
 	assert.Equal(t, expectedSQL, sql)
 
-	expectedArgs := []interface{}{"%irrel"}
+	expectedArgs := []any{"%irrel"}
 	assert.Equal(t, expectedArgs, args)
 }
 
@@ -371,7 +371,7 @@ func TestILikeToSql(t *testing.T) {
 	expectedSQL := "name ILIKE ?"
 	assert.Equal(t, expectedSQL, sql)
 
-	expectedArgs := []interface{}{"sq%"}
+	expectedArgs := []any{"sq%"}
 	assert.Equal(t, expectedArgs, args)
 }
 
@@ -383,7 +383,7 @@ func TestNotILikeToSql(t *testing.T) {
 	expectedSQL := "name NOT ILIKE ?"
 	assert.Equal(t, expectedSQL, sql)
 
-	expectedArgs := []interface{}{"sq%"}
+	expectedArgs := []any{"sq%"}
 	assert.Equal(t, expectedArgs, args)
 }
 
@@ -395,7 +395,7 @@ func TestSqlEqOrder(t *testing.T) {
 	expectedSQL := "a = ? AND b = ? AND c = ?"
 	assert.Equal(t, expectedSQL, sql)
 
-	expectedArgs := []interface{}{1, 2, 3}
+	expectedArgs := []any{1, 2, 3}
 	assert.Equal(t, expectedArgs, args)
 }
 
@@ -407,7 +407,7 @@ func TestSqlLtOrder(t *testing.T) {
 	expectedSQL := "a < ? AND b < ? AND c < ?"
 	assert.Equal(t, expectedSQL, sql)
 
-	expectedArgs := []interface{}{1, 2, 3}
+	expectedArgs := []any{1, 2, 3}
 	assert.Equal(t, expectedArgs, args)
 }
 
@@ -419,7 +419,7 @@ func TestExprEscaped(t *testing.T) {
 	expectedSQL := "count(??)"
 	assert.Equal(t, expectedSQL, sql)
 
-	expectedArgs := []interface{}{Expr("x")}
+	expectedArgs := []any{Expr("x")}
 	assert.Equal(t, expectedArgs, args)
 }
 
@@ -432,7 +432,7 @@ func TestExprRecursion(t *testing.T) {
 		expectedSQL := "count(nullif(a,?))"
 		assert.Equal(t, expectedSQL, sql)
 
-		expectedArgs := []interface{}{"b"}
+		expectedArgs := []any{"b"}
 		assert.Equal(t, expectedArgs, args)
 	}
 	{
@@ -443,7 +443,7 @@ func TestExprRecursion(t *testing.T) {
 		expectedSQL := "extract(epoch from ?)"
 		assert.Equal(t, expectedSQL, sql)
 
-		expectedArgs := []interface{}{"2001-02-03"}
+		expectedArgs := []any{"2001-02-03"}
 		assert.Equal(t, expectedArgs, args)
 	}
 	{
@@ -454,7 +454,7 @@ func TestExprRecursion(t *testing.T) {
 		expectedSQL := "JOIN t1 ON (id = ? AND NOT c1 AND ? @@ ?)"
 		assert.Equal(t, expectedSQL, sql)
 
-		expectedArgs := []interface{}{1, "x", "y"}
+		expectedArgs := []any{1, "x", "y"}
 		assert.Equal(t, expectedArgs, args)
 	}
 }
