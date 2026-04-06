@@ -13,16 +13,22 @@ import (
 )
 
 type insertData struct {
-	PlaceholderFormat PlaceholderFormat
-	RunWith           BaseRunner
-	Prefixes          []Sqlizer
-	StatementKeyword  string
-	Options           []string
-	Into              string
-	Columns           []string
-	Values            [][]any
-	Suffixes          []Sqlizer
-	Select            *SelectBuilder
+	PlaceholderFormat   PlaceholderFormat
+	RunWith             BaseRunner
+	Prefixes            []Sqlizer
+	StatementKeyword    string
+	Options             []string
+	Into                string
+	Columns             []string
+	Values              [][]any
+	Suffixes            []Sqlizer
+	Select              *SelectBuilder
+	ConflictColumns     []string
+	ConflictConstraint  string
+	ConflictDoNothing   bool
+	ConflictDoUpdates   []setClause
+	ConflictWhereParts  []Sqlizer
+	DuplicateKeyUpdates []setClause
 }
 
 func (d *insertData) Exec() (sql.Result, error) {
@@ -102,6 +108,14 @@ func (d *insertData) ToSQL() (sqlStr string, args []any, err error) {
 		return
 	}
 
+	if args, err = d.appendConflictToSQL(sql, args); err != nil {
+		return
+	}
+
+	if args, err = d.appendDuplicateKeyToSQL(sql, args); err != nil {
+		return
+	}
+
 	if len(d.Suffixes) > 0 {
 		sql.WriteString(" ")
 		args, err = appendToSQL(d.Suffixes, sql, " ", args)
@@ -165,6 +179,111 @@ func (d *insertData) appendSelectToSQL(w io.Writer, args []any) ([]any, error) {
 	args = append(args, sArgs...)
 
 	return args, nil
+}
+
+func (d *insertData) appendConflictToSQL(w io.Writer, args []any) ([]any, error) {
+	hasTarget := len(d.ConflictColumns) > 0 || len(d.ConflictConstraint) > 0
+	hasAction := d.ConflictDoNothing || len(d.ConflictDoUpdates) > 0
+
+	if !hasTarget && !hasAction {
+		return args, nil
+	}
+
+	if d.ConflictDoNothing && len(d.ConflictDoUpdates) > 0 {
+		return args, errors.New("insert on conflict: DO NOTHING and DO UPDATE are mutually exclusive")
+	}
+
+	if !d.ConflictDoNothing && len(d.ConflictDoUpdates) == 0 {
+		return args, errors.New("insert on conflict: must use DO NOTHING or DO UPDATE")
+	}
+
+	if _, err := io.WriteString(w, " ON CONFLICT"); err != nil {
+		return nil, err
+	}
+
+	if len(d.ConflictConstraint) > 0 {
+		if _, err := io.WriteString(w, " ON CONSTRAINT "); err != nil {
+			return nil, err
+		}
+		if _, err := io.WriteString(w, d.ConflictConstraint); err != nil {
+			return nil, err
+		}
+	} else if len(d.ConflictColumns) > 0 {
+		if _, err := io.WriteString(w, " ("); err != nil {
+			return nil, err
+		}
+		if _, err := io.WriteString(w, strings.Join(d.ConflictColumns, ",")); err != nil {
+			return nil, err
+		}
+		if _, err := io.WriteString(w, ")"); err != nil {
+			return nil, err
+		}
+	}
+
+	if d.ConflictDoNothing {
+		if _, err := io.WriteString(w, " DO NOTHING"); err != nil {
+			return nil, err
+		}
+		return args, nil
+	}
+
+	if _, err := io.WriteString(w, " DO UPDATE SET "); err != nil {
+		return nil, err
+	}
+
+	args, err := appendSetClauses(d.ConflictDoUpdates, w, args)
+	if err != nil {
+		return nil, err
+	}
+
+	if len(d.ConflictWhereParts) > 0 {
+		if _, err := io.WriteString(w, " WHERE "); err != nil {
+			return nil, err
+		}
+		args, err = appendToSQL(d.ConflictWhereParts, w, " AND ", args)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	return args, nil
+}
+
+func (d *insertData) appendDuplicateKeyToSQL(w io.Writer, args []any) ([]any, error) {
+	if len(d.DuplicateKeyUpdates) == 0 {
+		return args, nil
+	}
+
+	if _, err := io.WriteString(w, " ON DUPLICATE KEY UPDATE "); err != nil {
+		return nil, err
+	}
+
+	return appendSetClauses(d.DuplicateKeyUpdates, w, args)
+}
+
+func appendSetClauses(setClauses []setClause, w io.Writer, args []any) ([]any, error) {
+	setSQLs := make([]string, len(setClauses))
+	for i, sc := range setClauses {
+		var valSQL string
+		if vs, ok := sc.value.(Sqlizer); ok {
+			vsql, vargs, err := vs.ToSQL()
+			if err != nil {
+				return nil, err
+			}
+			if _, ok := vs.(SelectBuilder); ok {
+				valSQL = fmt.Sprintf("(%s)", vsql)
+			} else {
+				valSQL = vsql
+			}
+			args = append(args, vargs...)
+		} else {
+			valSQL = "?"
+			args = append(args, sc.value)
+		}
+		setSQLs[i] = fmt.Sprintf("%s = %s", sc.column, valSQL)
+	}
+	_, err := io.WriteString(w, strings.Join(setSQLs, ", "))
+	return args, err
 }
 
 // Builder
@@ -301,4 +420,107 @@ func (b InsertBuilder) Select(sb SelectBuilder) InsertBuilder {
 
 func (b InsertBuilder) statementKeyword(keyword string) InsertBuilder {
 	return builder.Set(b, "StatementKeyword", keyword).(InsertBuilder)
+}
+
+// OnConflictColumns sets the conflict target columns for a PostgreSQL
+// ON CONFLICT clause. Use with OnConflictDoNothing or OnConflictDoUpdate.
+//
+// Ex:
+//
+//	Insert("users").Columns("id", "name").Values(1, "John").
+//		OnConflictColumns("id").OnConflictDoNothing()
+//	// INSERT INTO users (id,name) VALUES (?,?) ON CONFLICT (id) DO NOTHING
+func (b InsertBuilder) OnConflictColumns(columns ...string) InsertBuilder {
+	return builder.Extend(b, "ConflictColumns", columns).(InsertBuilder)
+}
+
+// OnConflictOnConstraint sets the conflict target to a named constraint for a
+// PostgreSQL ON CONFLICT ON CONSTRAINT clause.
+//
+// Ex:
+//
+//	Insert("users").Columns("id", "name").Values(1, "John").
+//		OnConflictOnConstraint("users_pkey").OnConflictDoNothing()
+//	// INSERT INTO users (id,name) VALUES (?,?) ON CONFLICT ON CONSTRAINT users_pkey DO NOTHING
+func (b InsertBuilder) OnConflictOnConstraint(name string) InsertBuilder {
+	return builder.Set(b, "ConflictConstraint", name).(InsertBuilder)
+}
+
+// OnConflictDoNothing sets the conflict action to DO NOTHING for a PostgreSQL
+// ON CONFLICT clause.
+//
+// Ex:
+//
+//	Insert("users").Columns("id", "name").Values(1, "John").
+//		OnConflictColumns("id").OnConflictDoNothing()
+//	// INSERT INTO users (id,name) VALUES (?,?) ON CONFLICT (id) DO NOTHING
+func (b InsertBuilder) OnConflictDoNothing() InsertBuilder {
+	return builder.Set(b, "ConflictDoNothing", true).(InsertBuilder)
+}
+
+// OnConflictDoUpdate adds a column = value SET clause to the DO UPDATE action
+// for a PostgreSQL ON CONFLICT clause. The value can be a Sqlizer (e.g. Expr)
+// for expressions like EXCLUDED.column.
+//
+// Ex:
+//
+//	Insert("users").Columns("id", "name").Values(1, "John").
+//		OnConflictColumns("id").
+//		OnConflictDoUpdate("name", sq.Expr("EXCLUDED.name"))
+//	// INSERT INTO users (id,name) VALUES (?,?) ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name
+func (b InsertBuilder) OnConflictDoUpdate(column string, value any) InsertBuilder {
+	return builder.Append(b, "ConflictDoUpdates", setClause{column: column, value: value}).(InsertBuilder)
+}
+
+// OnConflictDoUpdateMap is a convenience method that calls OnConflictDoUpdate for
+// each key/value pair in clauses.
+func (b InsertBuilder) OnConflictDoUpdateMap(clauses map[string]any) InsertBuilder {
+	keys := make([]string, 0, len(clauses))
+	for key := range clauses {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		b = b.OnConflictDoUpdate(key, clauses[key])
+	}
+	return b
+}
+
+// OnConflictWhere adds a WHERE clause to the DO UPDATE action of a PostgreSQL
+// ON CONFLICT clause.
+//
+// Ex:
+//
+//	Insert("users").Columns("id", "name").Values(1, "John").
+//		OnConflictColumns("id").
+//		OnConflictDoUpdate("name", sq.Expr("EXCLUDED.name")).
+//		OnConflictWhere(sq.Eq{"users.active": true})
+func (b InsertBuilder) OnConflictWhere(pred any, args ...any) InsertBuilder {
+	return builder.Append(b, "ConflictWhereParts", newWherePart(pred, args...)).(InsertBuilder)
+}
+
+// OnDuplicateKeyUpdate adds a column = value clause to a MySQL
+// ON DUPLICATE KEY UPDATE clause.
+//
+// Ex:
+//
+//	Insert("users").Columns("id", "name").Values(1, "John").
+//		OnDuplicateKeyUpdate("name", "John")
+//	// INSERT INTO users (id,name) VALUES (?,?) ON DUPLICATE KEY UPDATE name = ?
+func (b InsertBuilder) OnDuplicateKeyUpdate(column string, value any) InsertBuilder {
+	return builder.Append(b, "DuplicateKeyUpdates", setClause{column: column, value: value}).(InsertBuilder)
+}
+
+// OnDuplicateKeyUpdateMap is a convenience method that calls OnDuplicateKeyUpdate
+// for each key/value pair in clauses.
+func (b InsertBuilder) OnDuplicateKeyUpdateMap(clauses map[string]any) InsertBuilder {
+	keys := make([]string, 0, len(clauses))
+	for key := range clauses {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		b = b.OnDuplicateKeyUpdate(key, clauses[key])
+	}
+	return b
 }
