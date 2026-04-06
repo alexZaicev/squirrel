@@ -1,5 +1,7 @@
 # Squirrel - fluent SQL generator for Go
 
+[![Go Reference](https://pkg.go.dev/badge/github.com/alexZaicev/squirrel.svg)](https://pkg.go.dev/github.com/alexZaicev/squirrel)
+
 **Squirrel is not an ORM.**
 
 Squirrel helps you build SQL queries from composable parts:
@@ -165,9 +167,12 @@ sq.Like{"name": "%moe%"}    // name LIKE ?
 sq.NotLike{"name": "%moe%"} // name NOT LIKE ?
 sq.ILike{"name": "sq%"}     // name ILIKE ?  (PostgreSQL)
 sq.NotILike{"name": "sq%"}  // name NOT ILIKE ?
+
+sq.Between{"age": [2]interface{}{18, 65}}       // age BETWEEN ? AND ?
+sq.NotBetween{"age": [2]interface{}{18, 65}}    // age NOT BETWEEN ? AND ?
 ```
 
-Combine expressions with `And` / `Or`:
+Combine expressions with `And` / `Or` / `Not`:
 
 ```go
 sq.And{sq.Gt{"age": 18}, sq.Eq{"active": true}}
@@ -175,6 +180,25 @@ sq.And{sq.Gt{"age": 18}, sq.Eq{"active": true}}
 
 sq.Or{sq.Eq{"col": 1}, sq.Eq{"col": 2}}
 // (col = ? OR col = ?)
+
+sq.Not{Cond: sq.Eq{"deleted": true}}
+// NOT (deleted = ?)
+
+// Compose Not with And/Or:
+sq.And{sq.Eq{"active": true}, sq.Not{Cond: sq.Eq{"banned": true}}}
+// (active = ? AND NOT (banned = ?))
+```
+
+Use `Exists` / `NotExists` for subquery existence checks:
+
+```go
+sub := sq.Select("1").From("orders").Where("orders.user_id = users.id")
+
+sq.Select("*").From("users").Where(sq.Exists(sub))
+// SELECT * FROM users WHERE EXISTS (SELECT 1 FROM orders WHERE orders.user_id = users.id)
+
+sq.Select("*").From("users").Where(sq.NotExists(sub))
+// SELECT * FROM users WHERE NOT EXISTS (SELECT 1 FROM orders WHERE orders.user_id = users.id)
 ```
 
 Use `Expr` for arbitrary SQL fragments:

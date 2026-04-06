@@ -64,20 +64,63 @@
 >
 > **GitHub [#265](https://github.com/Masterminds/squirrel/issues/265)** — "PostgreSQL :: insert into A (id, val) VALUES ((select x from y where a = ?), 'bbb')" (opened 2020-11-26). Subquery-as-value in INSERT — related gap.
 
-### 1.6 `NOT` Expression
-There is no `Not` expression type. Users must write raw SQL strings (`Expr("NOT (...)")`) to negate conditions. A `Not{Sqlizer}` wrapper would be a natural complement to the existing `And` and `Or` conjunction types.
+### 1.6 ✅ `NOT` Expression — **DONE**
+~~There is no `Not` expression type. Users must write raw SQL strings (`Expr("NOT (...)")`) to negate conditions. A `Not{Sqlizer}` wrapper would be a natural complement to the existing `And` and `Or` conjunction types.~~
 
-### 1.7 `BETWEEN` Expression
-`BETWEEN` is standard SQL and there's no expression type for it. Users must construct it with `Expr("col BETWEEN ? AND ?", lo, hi)`. A `Between{"col": [2]interface{}{lo, hi}}` type would be consistent with the existing `Eq`, `Lt`, etc. helpers.
+**Implemented** (April 2026) via a new `Not` struct type in `expr.go`. `Not` wraps a single `Sqlizer` condition and negates it with `NOT (...)`. It is a natural complement to the existing `And` and `Or` conjunction types.
+
+**Behavior:**
+- `Not{Cond: Eq{"active": true}}` → `NOT (active = ?)`
+- `Not{Cond: Or{Eq{"a": 1}, Eq{"b": 2}}}` → `NOT ((a = ? OR b = ?))`
+- `Not{Cond: Like{"name": "%irrel"}}` → `NOT (name LIKE ?)`
+- `Not{Cond: Not{Cond: expr}}` → `NOT (NOT (expr))` (double negation)
+- `Not{Cond: nil}` → `(1=1)` (identity — no condition means no negation)
+- Composable with `And`/`Or`: `And{Eq{"x": 1}, Not{Cond: Eq{"y": 2}}}` → `(x = ? AND NOT (y = ?))`
+- Works correctly inside `SelectBuilder.Where()` and with all placeholder formats (`Question`, `Dollar`, `Colon`, `AtP`)
+
+**Placeholder handling:** Uses `nestedToSQL` internally, which calls `toSQLRaw()` on builders that implement `rawSqlizer`, preventing double placeholder replacement when used with subqueries.
+
+**Files modified:** `expr.go`, `expr_test.go`, `integration/expr_test.go`. Full unit test coverage including basic negation, `Not` with `Or`/`And`/`Like`/`Expr`, nil condition, double negation, composition inside `And`/`Or`, and usage in `SelectBuilder.Where()`. Integration tests cover: `Not` with `Eq`, `Like`, `Or`, `And`+`Not` composition, double negation, `Not` with subquery, nil condition, and Dollar placeholder correctness.
+
+### 1.7 ✅ `BETWEEN` Expression — **DONE**
+~~`BETWEEN` is standard SQL and there's no expression type for it. Users must construct it with `Expr("col BETWEEN ? AND ?", lo, hi)`. A `Between{"col": [2]interface{}{lo, hi}}` type would be consistent with the existing `Eq`, `Lt`, etc. helpers.~~
 
 > **GitHub [#340](https://github.com/Masterminds/squirrel/issues/340)** — "Add sq.Between feature" (opened 2022-11-05). Direct request for a `Between` expression type.
 
-### 1.8 `EXISTS` / `NOT EXISTS` Subquery Helper
-These are extremely common in correlated subqueries. Currently requires:
+**Implemented** (April 2026) via two new `map[string]any` types in `expr.go`: `Between` and `NotBetween`. They follow the same map-based pattern as `Eq`, `Lt`, `Like`, etc.
+
+**Behavior:**
+- `Between{"age": [2]interface{}{18, 65}}` → `age BETWEEN ? AND ?`
+- `NotBetween{"age": [2]interface{}{18, 65}}` → `age NOT BETWEEN ? AND ?`
+- Multiple keys: `Between{"a": [2]interface{}{1, 10}, "b": [2]interface{}{20, 30}}` → `a BETWEEN ? AND ? AND b BETWEEN ? AND ?` (keys sorted alphabetically)
+- Empty map: `Between{}` → `(1=1)` (consistent with `Eq{}`)
+- Values must be 2-element arrays or slices — wrong size, non-array/slice, or nil values produce descriptive errors
+- Composable with `And`/`Or`/`Not`: `And{Eq{"active": true}, Between{"age": [2]interface{}{18, 65}}}` → `(active = ? AND age BETWEEN ? AND ?)`
+- Works correctly inside `SelectBuilder.Where()` and with all placeholder formats (`Question`, `Dollar`, `Colon`, `AtP`)
+
+**Files modified:** `expr.go`, `expr_test.go`, `integration/expr_test.go`. Full unit test coverage including basic usage, `NotBetween`, empty map, multiple keys, string values, slice values, nil error, wrong-size error, non-array error, usage in `SelectBuilder.Where()`, Dollar placeholder correctness, and composition with `And`. Integration tests cover: single column, boundary inclusivity, `NotBetween`, combination with `Eq`, string values, no-match, multiple keys, and Dollar placeholders for both `Between` and `NotBetween`.
+
+### 1.8 ✅ `EXISTS` / `NOT EXISTS` Subquery Helper — **DONE**
+~~These are extremely common in correlated subqueries. Currently requires:~~
 ```go
-Expr("EXISTS (?)", subQuery)  // fragile
+// Old fragile approach — no longer necessary:
+Expr("EXISTS (?)", subQuery)
 ```
-A dedicated `Exists(SelectBuilder)` / `NotExists(SelectBuilder)` helper would be safer and clearer.
+~~A dedicated `Exists(SelectBuilder)` / `NotExists(SelectBuilder)` helper would be safer and clearer.~~
+
+**Implemented** (April 2026) via two exported constructor functions in `expr.go`: `Exists(Sqlizer) Sqlizer` and `NotExists(Sqlizer) Sqlizer`. They return a private `existsExpr` struct that implements `Sqlizer`.
+
+**Behavior:**
+- `Exists(sub)` → `EXISTS (SELECT ...)`
+- `NotExists(sub)` → `NOT EXISTS (SELECT ...)`
+- Accepts any `Sqlizer`, not just `SelectBuilder` — works with `Expr(...)` for raw SQL subqueries too
+- `Exists(nil)` / `NotExists(nil)` → returns a descriptive error (`"exists operator requires a non-nil subquery"`)
+- Composable with `And`/`Or`/`Not`: `And{Eq{"active": true}, Exists(sub)}` → `(active = ? AND EXISTS (SELECT ...))`
+- Works correctly inside `SelectBuilder.Where()` and with all placeholder formats (`Question`, `Dollar`, `Colon`, `AtP`)
+
+**Placeholder handling:** Uses `nestedToSQL` internally, which calls `toSQLRaw()` on builders that implement `rawSqlizer`, preventing double placeholder replacement when used with `Dollar` or other numbered formats. Placeholders are numbered sequentially across outer and inner queries.
+
+**Files modified:** `expr.go`, `expr_test.go`, `integration/expr_test.go`. Unit tests cover: basic `Exists`, basic `NotExists`, subquery with args, nil subquery error, usage in `SelectBuilder.Where()`, Dollar placeholder correctness, composition with `And`/`Or`/`Not`, correlated subqueries, and `Expr`-based subqueries. Integration tests cover: correlated `EXISTS`, correlated `NOT EXISTS`, `EXISTS` with parameterized conditions, combination with `Eq`, `NOT EXISTS` combined with conditions, and Dollar placeholder correctness for both `Exists` and `NotExists`.
 
 ### 1.9 `JOIN ... USING` Convenience
 All join helpers assume `ON` clauses via freeform strings. A `JoinUsing("table", "col1", "col2")` convenience would reduce boilerplate for the common case.
@@ -337,8 +380,9 @@ Building an insert incrementally — adding a column+value pair after the initia
 | ⭐ High | `JoinSelect` — join against a subquery | [#241](https://github.com/Masterminds/squirrel/issues/241) |
 | ✅ Done | First-class `RETURNING` clause | [#348](https://github.com/Masterminds/squirrel/issues/348) |
 | ⭐ High | Identifier quoting helper | [#328](https://github.com/Masterminds/squirrel/issues/328) |
-| ⭐ High | `NOT`, `EXISTS` / `NOT EXISTS` expression helpers | — |
-| ⭐ Medium | `BETWEEN` expression | [#340](https://github.com/Masterminds/squirrel/issues/340) |
+| ✅ Done | `NOT` expression helper | — |
+| ✅ Done | `EXISTS` / `NOT EXISTS` expression helpers | — |
+| ✅ Done | `BETWEEN` expression | [#340](https://github.com/Masterminds/squirrel/issues/340) |
 | ⭐ Medium | Mid-query clause (MS SQL `OUTPUT INSERTED`) | [#348](https://github.com/Masterminds/squirrel/issues/348) |
 | ⭐ Medium | Named/positional placeholder back-references | [#315](https://github.com/Masterminds/squirrel/issues/315) |
 | ⭐ Medium | Mixed raw + parameterized values in `SetMap` | [#377](https://github.com/Masterminds/squirrel/issues/377) |
