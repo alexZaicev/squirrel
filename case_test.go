@@ -140,6 +140,113 @@ func TestCaseWithNoWhenClause(t *testing.T) {
 	assert.Equal(t, "case expression must contain at lease one WHEN clause", err.Error())
 }
 
+func TestCaseWithIntValues(t *testing.T) {
+	// GitHub #388: non-string values in When/Then should be auto-wrapped
+	// as parameterized placeholders.
+	caseStmt := Case("order_no").
+		When("ORD001", 500).
+		When("ORD002", 300).
+		Else(0)
+
+	sql, args, err := caseStmt.ToSQL()
+
+	assert.NoError(t, err)
+
+	expectedSQL := "CASE order_no " +
+		"WHEN ORD001 THEN ? " +
+		"WHEN ORD002 THEN ? " +
+		"ELSE ? " +
+		"END"
+	assert.Equal(t, expectedSQL, sql)
+
+	expectedArgs := []any{500, 300, 0}
+	assert.Equal(t, expectedArgs, args)
+}
+
+func TestCaseWithIntWhenAndThen(t *testing.T) {
+	// Both WHEN and THEN can be non-string values.
+	caseStmt := Case("status").
+		When(1, "active").
+		When(2, "inactive")
+
+	sql, args, err := caseStmt.ToSQL()
+
+	assert.NoError(t, err)
+
+	expectedSQL := "CASE status " +
+		"WHEN ? THEN active " +
+		"WHEN ? THEN inactive " +
+		"END"
+	assert.Equal(t, expectedSQL, sql)
+
+	expectedArgs := []any{1, 2}
+	assert.Equal(t, expectedArgs, args)
+}
+
+func TestCaseWithFloat64Values(t *testing.T) {
+	caseStmt := Case("score").
+		When(1.5, "low").
+		When(3.5, "high").
+		Else("unknown")
+
+	sql, args, err := caseStmt.ToSQL()
+
+	assert.NoError(t, err)
+
+	expectedSQL := "CASE score " +
+		"WHEN ? THEN low " +
+		"WHEN ? THEN high " +
+		"ELSE unknown " +
+		"END"
+	assert.Equal(t, expectedSQL, sql)
+
+	expectedArgs := []any{1.5, 3.5}
+	assert.Equal(t, expectedArgs, args)
+}
+
+func TestCaseWithBoolValues(t *testing.T) {
+	caseStmt := Case().
+		When(Eq{"active": true}, 1).
+		Else(0)
+
+	sql, args, err := caseStmt.ToSQL()
+
+	assert.NoError(t, err)
+
+	expectedSQL := "CASE " +
+		"WHEN active = ? THEN ? " +
+		"ELSE ? " +
+		"END"
+	assert.Equal(t, expectedSQL, sql)
+
+	expectedArgs := []any{true, 1, 0}
+	assert.Equal(t, expectedArgs, args)
+}
+
+func TestCaseWithMixedNonStringValues(t *testing.T) {
+	// Mix of string, int, Sqlizer, and float in When/Then/Else.
+	caseStmt := Case().
+		When(Eq{"x": 0}, 100).
+		When("x > 10", 200.5).
+		Else(Expr("?", "fallback"))
+
+	qb := Select().Column(caseStmt).From("table")
+	sql, args, err := qb.ToSQL()
+
+	assert.NoError(t, err)
+
+	expectedSQL := "SELECT CASE " +
+		"WHEN x = ? THEN ? " +
+		"WHEN x > 10 THEN ? " +
+		"ELSE ? " +
+		"END " +
+		"FROM table"
+	assert.Equal(t, expectedSQL, sql)
+
+	expectedArgs := []any{0, 100, 200.5, "fallback"}
+	assert.Equal(t, expectedArgs, args)
+}
+
 func TestCaseBuilderMustSql(t *testing.T) {
 	defer func() {
 		if r := recover(); r == nil {

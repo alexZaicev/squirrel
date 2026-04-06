@@ -30,6 +30,14 @@ func Expr(sql string, args ...any) Sqlizer {
 }
 
 func (e expr) ToSQL() (sql string, args []any, err error) {
+	return e.toSQLInner(false)
+}
+
+func (e expr) toSQLRaw() (sql string, args []any, err error) {
+	return e.toSQLInner(true)
+}
+
+func (e expr) toSQLInner(nested bool) (sql string, args []any, err error) {
 	simple := true
 	for _, arg := range e.args {
 		if _, ok := arg.(Sqlizer); ok {
@@ -62,7 +70,11 @@ func (e expr) ToSQL() (sql string, args []any, err error) {
 
 		if as, ok := ap[0].(Sqlizer); ok {
 			// sqlizer argument; expand it and append the result
-			isql, iargs, err = as.ToSQL()
+			if nested {
+				isql, iargs, err = nestedToSQL(as)
+			} else {
+				isql, iargs, err = as.ToSQL()
+			}
 			buf.WriteString(sp[:i])
 			buf.WriteString(isql)
 			args = append(args, iargs...)
@@ -103,6 +115,25 @@ func (ce concatExpr) ToSQL() (sql string, args []any, err error) {
 	return
 }
 
+func (ce concatExpr) toSQLRaw() (sql string, args []any, err error) {
+	for _, part := range ce {
+		switch p := part.(type) {
+		case string:
+			sql += p
+		case Sqlizer:
+			pSQL, pArgs, err := nestedToSQL(p)
+			if err != nil {
+				return "", nil, err
+			}
+			sql += pSQL
+			args = append(args, pArgs...)
+		default:
+			return "", nil, fmt.Errorf("%#v is not a string or Sqlizer", part)
+		}
+	}
+	return
+}
+
 // ConcatExpr builds an expression by concatenating strings and other expressions.
 //
 // Ex:
@@ -130,6 +161,14 @@ func Alias(expr Sqlizer, alias string) Sqlizer {
 
 func (e aliasExpr) ToSQL() (sql string, args []any, err error) {
 	sql, args, err = e.expr.ToSQL()
+	if err == nil {
+		sql = fmt.Sprintf("(%s) AS %s", sql, e.alias)
+	}
+	return
+}
+
+func (e aliasExpr) toSQLRaw() (sql string, args []any, err error) {
+	sql, args, err = nestedToSQL(e.expr)
 	if err == nil {
 		sql = fmt.Sprintf("(%s) AS %s", sql, e.alias)
 	}
@@ -202,7 +241,11 @@ func (eq Eq) toSQL(useNotOpr bool) (sql string, args []any, err error) {
 		} else {
 			if isListType(val) {
 				valVal := reflect.ValueOf(val)
-				if valVal.Len() == 0 {
+				if valVal.Kind() == reflect.Slice && valVal.IsNil() {
+					// A nil slice (e.g. []uint64(nil)) is treated as NULL,
+					// not as an empty IN list. GitHub #277.
+					expr = fmt.Sprintf("%s %s NULL", key, nullOpr)
+				} else if valVal.Len() == 0 {
 					expr = inEmptyExpr
 					if args == nil {
 						args = []any{}
@@ -221,6 +264,9 @@ func (eq Eq) toSQL(useNotOpr bool) (sql string, args []any, err error) {
 		exprs = append(exprs, expr)
 	}
 	sql = strings.Join(exprs, " AND ")
+	if len(exprs) > 1 {
+		sql = fmt.Sprintf("(%s)", sql)
+	}
 	return
 }
 
@@ -269,6 +315,9 @@ func (lk Like) toSQL(opr string) (sql string, args []any, err error) {
 		exprs = append(exprs, expr)
 	}
 	sql = strings.Join(exprs, " AND ")
+	if len(exprs) > 1 {
+		sql = fmt.Sprintf("(%s)", sql)
+	}
 	return
 }
 
@@ -366,6 +415,9 @@ func (lt Lt) toSQL(opposite, orEq bool) (sql string, args []any, err error) {
 		exprs = append(exprs, expr)
 	}
 	sql = strings.Join(exprs, " AND ")
+	if len(exprs) > 1 {
+		sql = fmt.Sprintf("(%s)", sql)
+	}
 	return
 }
 
@@ -444,6 +496,9 @@ func (b Between) toSQL(opr string) (sql string, args []any, err error) {
 		}
 	}
 	sql = strings.Join(exprs, " AND ")
+	if len(exprs) > 1 {
+		sql = fmt.Sprintf("(%s)", sql)
+	}
 	return
 }
 
@@ -465,9 +520,9 @@ func (nb NotBetween) ToSQL() (sql string, args []any, err error) {
 
 type conj []Sqlizer
 
-func (c conj) join(sep, defaultExpr string) (sql string, args []any, err error) {
+func (c conj) join(sep string) (sql string, args []any, err error) {
 	if len(c) == 0 {
-		return defaultExpr, []any{}, nil
+		return "", []any{}, nil
 	}
 	var sqlParts []string
 	for _, sqlizer := range c {
@@ -490,14 +545,14 @@ func (c conj) join(sep, defaultExpr string) (sql string, args []any, err error) 
 type And conj
 
 func (a And) ToSQL() (string, []any, error) {
-	return conj(a).join(" AND ", sqlTrue)
+	return conj(a).join(" AND ")
 }
 
 // Or conjunction Sqlizers
 type Or conj
 
 func (o Or) ToSQL() (string, []any, error) {
-	return conj(o).join(" OR ", sqlFalse)
+	return conj(o).join(" OR ")
 }
 
 // Not negates the given Sqlizer condition.

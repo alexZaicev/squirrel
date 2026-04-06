@@ -84,6 +84,33 @@ func TestExprEq(t *testing.T) {
 		// Assert
 		assert.Equal(t, []string{"banana"}, names)
 	})
+
+	t.Run("NilSliceIsNull", func(t *testing.T) {
+		// GitHub #277: nil slice should produce IS NULL, not (1=0).
+		// Row 6 ('mystery') has NULL category.
+		var cats []string
+		q := sb.Select("name").From("sq_items").Where(sqrl.Eq{"category": cats})
+
+		// Act
+		names := queryStrings(t, q)
+
+		// Assert
+		assert.Equal(t, []string{"mystery"}, names)
+	})
+
+	t.Run("NilSliceIsNullNotEq", func(t *testing.T) {
+		// GitHub #277: nil slice with NotEq → IS NOT NULL.
+		var cats []string
+		q := sb.Select("name").From("sq_items").
+			Where(sqrl.NotEq{"category": cats}).
+			OrderBy("id")
+
+		// Act
+		names := queryStrings(t, q)
+
+		// Assert — all rows except mystery (which has NULL category)
+		assert.Equal(t, []string{"apple", "banana", "carrot", "donut", "eggplant"}, names)
+	})
 }
 
 // ---------------------------------------------------------------------------
@@ -375,7 +402,7 @@ func TestExprAndOr(t *testing.T) {
 	})
 
 	t.Run("EmptyAnd", func(t *testing.T) {
-		// Arrange — empty And{} evaluates to (1=1), matching all
+		// Arrange — empty And{} produces no WHERE clause, matching all rows
 		q := sb.Select("name").From("sq_items").Where(sqrl.And{}).OrderBy("id")
 
 		// Act
@@ -386,14 +413,68 @@ func TestExprAndOr(t *testing.T) {
 	})
 
 	t.Run("EmptyOr", func(t *testing.T) {
-		// Arrange — empty Or{} evaluates to (1=0), matching none
-		q := sb.Select("name").From("sq_items").Where(sqrl.Or{})
+		// Arrange — empty Or{} produces no WHERE clause, matching all rows (GitHub #382 fix)
+		q := sb.Select("name").From("sq_items").Where(sqrl.Or{}).OrderBy("id")
 
 		// Act
 		names := queryStrings(t, q)
 
-		// Assert
-		assert.Empty(t, names)
+		// Assert — all rows returned, not zero
+		assert.Len(t, names, 6)
+	})
+
+	t.Run("NilOrInWhere", func(t *testing.T) {
+		// Arrange — GitHub #382: nil Or in Where should produce no WHERE clause
+		var filters sqrl.Or
+		q := sb.Select("name").From("sq_items").Where(filters).OrderBy("id")
+
+		// Act
+		names := queryStrings(t, q)
+
+		// Assert — all rows returned
+		assert.Len(t, names, 6)
+	})
+
+	t.Run("NilAndInWhere", func(t *testing.T) {
+		// Arrange — GitHub #382: nil And in Where should produce no WHERE clause
+		var filters sqrl.And
+		q := sb.Select("name").From("sq_items").Where(filters).OrderBy("id")
+
+		// Act
+		names := queryStrings(t, q)
+
+		// Assert — all rows returned
+		assert.Len(t, names, 6)
+	})
+
+	t.Run("NilOrFollowedByCondition", func(t *testing.T) {
+		// Arrange — GitHub #382: nil Or followed by a real condition
+		var filters sqrl.Or
+		q := sb.Select("name").From("sq_items").
+			Where(filters).
+			Where(sqrl.Eq{"category": "fruit"}).
+			OrderBy("id")
+
+		// Act
+		names := queryStrings(t, q)
+
+		// Assert — only fruit items
+		assert.Equal(t, []string{"apple", "banana"}, names)
+	})
+
+	t.Run("ConditionFollowedByNilOr", func(t *testing.T) {
+		// Arrange — real condition followed by nil Or
+		var filters sqrl.Or
+		q := sb.Select("name").From("sq_items").
+			Where(sqrl.Eq{"category": "fruit"}).
+			Where(filters).
+			OrderBy("id")
+
+		// Act
+		names := queryStrings(t, q)
+
+		// Assert — only fruit items
+		assert.Equal(t, []string{"apple", "banana"}, names)
 	})
 }
 
@@ -1699,5 +1780,389 @@ func TestExprExists(t *testing.T) {
 		//          fruit already counted; dairy has no items so NOT EXISTS is true;
 		//          fruit has items but none > 100 so NOT EXISTS is true too
 		assert.Equal(t, []string{"dairy", "fruit"}, names)
+	})
+}
+
+// ---------------------------------------------------------------------------
+// Multi-key expressions inside Or — GitHub #269
+// ---------------------------------------------------------------------------
+
+func TestExprOrWithMultiKeyEq(t *testing.T) {
+	t.Run("BasicMultiKeyEqInsideOr", func(t *testing.T) {
+		// Arrange — (category = 'fruit' AND price = 50) OR (category = 'vegetable' AND price = 75)
+		q := sb.Select("name").From("sq_items").
+			Where(sqrl.Or{
+				sqrl.Eq{"category": "fruit", "price": 50},
+				sqrl.Eq{"category": "vegetable", "price": 75},
+			}).
+			OrderBy("id")
+
+		// Act
+		names := queryStrings(t, q)
+
+		// Assert — banana (fruit, 50), carrot (vegetable, 75)
+		assert.Equal(t, []string{"banana", "carrot"}, names)
+	})
+
+	t.Run("MultiKeyEqInsideOrNoMatch", func(t *testing.T) {
+		// Arrange — combinations that don't match any row
+		q := sb.Select("name").From("sq_items").
+			Where(sqrl.Or{
+				sqrl.Eq{"category": "fruit", "price": 999},
+				sqrl.Eq{"category": "vegetable", "price": 999},
+			}).
+			OrderBy("id")
+
+		// Act
+		names := queryStrings(t, q)
+
+		// Assert — no rows
+		assert.Empty(t, names)
+	})
+
+	t.Run("MixedMultiKeyAndSingleKeyInsideOr", func(t *testing.T) {
+		// Arrange — (category = 'fruit' AND price = 100) OR (id = 4)
+		q := sb.Select("name").From("sq_items").
+			Where(sqrl.Or{
+				sqrl.Eq{"category": "fruit", "price": 100},
+				sqrl.Eq{"id": 4},
+			}).
+			OrderBy("id")
+
+		// Act
+		names := queryStrings(t, q)
+
+		// Assert — apple (fruit, 100), donut (id 4)
+		assert.Equal(t, []string{"apple", "donut"}, names)
+	})
+
+	t.Run("MultiKeyLtInsideOr", func(t *testing.T) {
+		// Arrange — (id < 2 AND price < 200) OR (id > 5)
+		q := sb.Select("name").From("sq_items").
+			Where(sqrl.Or{
+				sqrl.Lt{"id": 2, "price": 200},
+				sqrl.Gt{"id": 5},
+			}).
+			OrderBy("id")
+
+		// Act
+		names := queryStrings(t, q)
+
+		// Assert — apple (id 1, price 100 < 200), mystery (id 6)
+		assert.Equal(t, []string{"apple", "mystery"}, names)
+	})
+
+	t.Run("MultiKeyEqWithDollarPlaceholders", func(t *testing.T) {
+		// Arrange — verify Dollar placeholders work correctly with parenthesized multi-key Eq
+		q := sqrl.Select("name").From("sq_items").
+			Where(sqrl.Or{
+				sqrl.Eq{"category": "fruit", "price": 50},
+				sqrl.Eq{"category": "vegetable", "price": 75},
+			}).
+			PlaceholderFormat(sqrl.Dollar)
+
+		sqlStr, args, err := q.ToSQL()
+		require.NoError(t, err)
+
+		// Assert — correct SQL with dollar placeholders and parenthesized groups
+		assert.Equal(t, "SELECT name FROM sq_items WHERE ((category = $1 AND price = $2) OR (category = $3 AND price = $4))", sqlStr)
+		assert.Equal(t, []interface{}{"fruit", 50, "vegetable", 75}, args)
+	})
+
+	t.Run("MultiKeyNotEqInsideOr", func(t *testing.T) {
+		// Arrange — (category <> 'fruit' AND price <> 200) OR (id = 2)
+		q := sb.Select("name").From("sq_items").
+			Where(sqrl.Or{
+				sqrl.NotEq{"category": "fruit", "price": 200},
+				sqrl.Eq{"id": 2},
+			}).
+			Where(sqrl.NotEq{"category": nil}).
+			OrderBy("id")
+
+		// Act
+		names := queryStrings(t, q)
+
+		// Assert — banana (matched by Or/Eq id=2); carrot (vegetable, 75); eggplant (vegetable, 150)
+		// donut: category=pastry <> fruit ✓, price=200 <> 200 ✗ → first branch fails, id=2? no → excluded
+		// Wait: apple is fruit, so category<>'fruit' is false → excluded from first branch; id=2? no
+		// banana: category='fruit' so category<>'fruit'=false → first branch fails; id=2? yes → included
+		// carrot: category='vegetable'<>'fruit' ✓, price=75<>200 ✓ → included
+		// donut: category='pastry'<>'fruit' ✓, price=200<>200 ✗ → first branch fails; id=2? no → excluded
+		// eggplant: category='vegetable'<>'fruit' ✓, price=150<>200 ✓ → included
+		assert.Equal(t, []string{"banana", "carrot", "eggplant"}, names)
+	})
+}
+
+// ---------------------------------------------------------------------------
+// Issue #351 / #285: Misplaced Parameters with Subqueries
+// ---------------------------------------------------------------------------
+
+func TestNestedSubqueryPlaceholders(t *testing.T) {
+	t.Run("AliasSubqueryInColumn", func(t *testing.T) {
+		// Arrange — subquery as aliased column expression.
+		inner := sqrl.Select("COUNT(*)").From("sq_items").Where(sqrl.Eq{"category": "fruit"})
+		q := sb.Select("name").
+			Column(sqrl.Alias(inner, "fruit_count")).
+			From("sq_categories").
+			Where(sqrl.Eq{"name": "fruit"})
+
+		// Act
+		rows, err := q.Query()
+		require.NoError(t, err)
+		defer rows.Close()
+
+		require.True(t, rows.Next())
+		var name string
+		var count int
+		require.NoError(t, rows.Scan(&name, &count))
+		assert.Equal(t, "fruit", name)
+		assert.Equal(t, 2, count)
+		assert.False(t, rows.Next())
+	})
+
+	t.Run("AliasSubqueryDollarPlaceholders", func(t *testing.T) {
+		// Arrange — verify correct Dollar placeholder numbering.
+		inner := sqrl.Select("COUNT(*)").From("sq_items").Where(sqrl.Eq{"category": "fruit"}).
+			PlaceholderFormat(sqrl.Dollar)
+		q := sqrl.Select("name").
+			Column(sqrl.Alias(inner, "fruit_count")).
+			From("sq_categories").
+			Where(sqrl.Eq{"name": "fruit"}).
+			PlaceholderFormat(sqrl.Dollar)
+
+		sqlStr, args, err := q.ToSQL()
+		require.NoError(t, err)
+
+		// Assert — sequential Dollar placeholders with no duplicates.
+		assert.Equal(t,
+			"SELECT name, (SELECT COUNT(*) FROM sq_items WHERE category = $1) AS fruit_count "+
+				"FROM sq_categories WHERE name = $2",
+			sqlStr)
+		assert.Equal(t, []interface{}{"fruit", "fruit"}, args)
+	})
+
+	t.Run("MultipleAliasSubqueryColumns", func(t *testing.T) {
+		// Arrange — two aliased subqueries as column expressions.
+		sub1 := sqrl.Select("COUNT(*)").From("sq_items").Where(sqrl.Eq{"category": "fruit"})
+		sub2 := sqrl.Select("COUNT(*)").From("sq_items").Where(sqrl.Eq{"category": "vegetable"})
+		q := sb.Select("'totals' AS label").
+			Column(sqrl.Alias(sub1, "fruit_count")).
+			Column(sqrl.Alias(sub2, "veg_count"))
+
+		// Act
+		rows, err := q.Query()
+		require.NoError(t, err)
+		defer rows.Close()
+
+		require.True(t, rows.Next())
+		var label string
+		var fruitCount, vegCount int
+		require.NoError(t, rows.Scan(&label, &fruitCount, &vegCount))
+		assert.Equal(t, "totals", label)
+		assert.Equal(t, 2, fruitCount)
+		assert.Equal(t, 2, vegCount)
+	})
+
+	t.Run("MultipleAliasSubqueryDollarPlaceholders", func(t *testing.T) {
+		// Arrange — verify correct sequential Dollar numbering with two subqueries.
+		sub1 := sqrl.Select("COUNT(*)").From("sq_items").Where(sqrl.Eq{"category": "fruit"}).
+			PlaceholderFormat(sqrl.Dollar)
+		sub2 := sqrl.Select("COUNT(*)").From("sq_items").Where(sqrl.Eq{"category": "vegetable"}).
+			PlaceholderFormat(sqrl.Dollar)
+		q := sqrl.Select("'totals' AS label").
+			Column(sqrl.Alias(sub1, "fruit_count")).
+			Column(sqrl.Alias(sub2, "veg_count")).
+			PlaceholderFormat(sqrl.Dollar)
+
+		sqlStr, args, err := q.ToSQL()
+		require.NoError(t, err)
+
+		assert.Equal(t,
+			"SELECT 'totals' AS label, "+
+				"(SELECT COUNT(*) FROM sq_items WHERE category = $1) AS fruit_count, "+
+				"(SELECT COUNT(*) FROM sq_items WHERE category = $2) AS veg_count",
+			sqlStr)
+		assert.Equal(t, []interface{}{"fruit", "vegetable"}, args)
+	})
+
+	t.Run("ExprSubqueryInWhere", func(t *testing.T) {
+		// Arrange — Expr("col > (?)", subquery) pattern.
+		avgPrice := sqrl.Select("AVG(price)").From("sq_items").Where(sqrl.Eq{"category": "fruit"})
+		q := sb.Select("name").From("sq_items").
+			Where(sqrl.Expr("price > (?)", avgPrice)).
+			OrderBy("id")
+
+		// Act
+		names := queryStrings(t, q)
+
+		// Assert — avg of fruit (apple=100, banana=50) = 75.
+		assert.Equal(t, []string{"apple", "donut", "eggplant", "mystery"}, names)
+	})
+
+	t.Run("ExprSubqueryDollarPlaceholders", func(t *testing.T) {
+		// Arrange — verify correct Dollar placeholder numbering with Expr subquery.
+		avgPrice := sqrl.Select("AVG(price)").From("sq_items").Where(sqrl.Eq{"category": "fruit"}).
+			PlaceholderFormat(sqrl.Dollar)
+		q := sqrl.Select("name").From("sq_items").
+			Where(sqrl.Expr("price > (?)", avgPrice)).
+			Where(sqrl.Eq{"category": "vegetable"}).
+			PlaceholderFormat(sqrl.Dollar)
+
+		sqlStr, args, err := q.ToSQL()
+		require.NoError(t, err)
+
+		assert.Equal(t,
+			"SELECT name FROM sq_items "+
+				"WHERE price > (SELECT AVG(price) FROM sq_items WHERE category = $1) "+
+				"AND category = $2",
+			sqlStr)
+		assert.Equal(t, []interface{}{"fruit", "vegetable"}, args)
+	})
+
+	t.Run("ConcatExprSubquery", func(t *testing.T) {
+		// Arrange — ConcatExpr with a subquery as part.
+		inner := sqrl.Select("description").From("sq_categories").Where(sqrl.Eq{"name": "fruit"})
+		ce := sqrl.ConcatExpr("(", inner, ") AS cat_desc")
+		q := sb.Select("name").Column(ce).From("sq_items").
+			Where(sqrl.Eq{"category": "fruit"}).OrderBy("id")
+
+		// Act
+		rows, err := q.Query()
+		require.NoError(t, err)
+		defer rows.Close()
+
+		var results []string
+		for rows.Next() {
+			var name, desc string
+			require.NoError(t, rows.Scan(&name, &desc))
+			results = append(results, name+":"+desc)
+		}
+		require.NoError(t, rows.Err())
+
+		assert.Equal(t, []string{"apple:Fresh fruits", "banana:Fresh fruits"}, results)
+	})
+
+	t.Run("ConcatExprSubqueryDollarPlaceholders", func(t *testing.T) {
+		// Arrange — verify correct Dollar numbering with ConcatExpr.
+		inner := sqrl.Select("description").From("sq_categories").Where(sqrl.Eq{"name": "fruit"}).
+			PlaceholderFormat(sqrl.Dollar)
+		ce := sqrl.ConcatExpr("(", inner, ") AS cat_desc")
+		q := sqrl.Select("name").Column(ce).From("sq_items").
+			Where(sqrl.Eq{"category": "fruit"}).
+			PlaceholderFormat(sqrl.Dollar)
+
+		sqlStr, args, err := q.ToSQL()
+		require.NoError(t, err)
+
+		assert.Equal(t,
+			"SELECT name, (SELECT description FROM sq_categories WHERE name = $1) AS cat_desc "+
+				"FROM sq_items WHERE category = $2",
+			sqlStr)
+		assert.Equal(t, []interface{}{"fruit", "fruit"}, args)
+	})
+
+	t.Run("PrefixExprSubqueryDollarPlaceholders", func(t *testing.T) {
+		// Arrange — Prefix with Expr wrapping a subquery.
+		sub := sqrl.Select("id").From("sq_items").Where(sqrl.Eq{"category": "fruit"}).
+			PlaceholderFormat(sqrl.Dollar)
+		q := sqrl.Select("*").
+			Prefix("WITH fruit_ids AS (?)", sub).
+			From("fruit_ids").
+			PlaceholderFormat(sqrl.Dollar)
+
+		sqlStr, args, err := q.ToSQL()
+		require.NoError(t, err)
+
+		assert.Equal(t,
+			"WITH fruit_ids AS (SELECT id FROM sq_items WHERE category = $1) "+
+				"SELECT * FROM fruit_ids",
+			sqlStr)
+		assert.Equal(t, []interface{}{"fruit"}, args)
+	})
+
+	t.Run("ComplexMultiPositionDollar", func(t *testing.T) {
+		// Arrange — subqueries in column alias and WHERE — all with Dollar.
+		colSub := sqrl.Select("COUNT(*)").From("sq_items").Where(sqrl.Eq{"category": "fruit"}).
+			PlaceholderFormat(sqrl.Dollar)
+		whereSub := sqrl.Select("AVG(price)").From("sq_items").Where(sqrl.Eq{"category": "vegetable"}).
+			PlaceholderFormat(sqrl.Dollar)
+
+		q := sqrl.Select("name").
+			Column(sqrl.Alias(colSub, "fruit_count")).
+			From("sq_items").
+			Where(sqrl.Expr("price > (?)", whereSub)).
+			Where(sqrl.Eq{"category": "pastry"}).
+			PlaceholderFormat(sqrl.Dollar)
+
+		sqlStr, args, err := q.ToSQL()
+		require.NoError(t, err)
+
+		// Assert — three Dollar placeholders, numbered sequentially.
+		assert.Equal(t,
+			"SELECT name, (SELECT COUNT(*) FROM sq_items WHERE category = $1) AS fruit_count "+
+				"FROM sq_items "+
+				"WHERE price > (SELECT AVG(price) FROM sq_items WHERE category = $2) "+
+				"AND category = $3",
+			sqlStr)
+		assert.Equal(t, []interface{}{"fruit", "vegetable", "pastry"}, args)
+	})
+
+	t.Run("SuffixExprSubqueryDollarPlaceholders", func(t *testing.T) {
+		// Arrange — Suffix with Expr wrapping a subquery.
+		sub := sqrl.Select("1").From("sq_items").Where(sqrl.Eq{"category": "pastry"}).
+			PlaceholderFormat(sqrl.Dollar)
+		q := sqrl.Select("name").From("sq_items").
+			Where(sqrl.Eq{"category": "fruit"}).
+			Suffix("AND EXISTS (?)", sub).
+			PlaceholderFormat(sqrl.Dollar)
+
+		sqlStr, args, err := q.ToSQL()
+		require.NoError(t, err)
+
+		assert.Equal(t,
+			"SELECT name FROM sq_items WHERE category = $1 "+
+				"AND EXISTS (SELECT 1 FROM sq_items WHERE category = $2)",
+			sqlStr)
+		assert.Equal(t, []interface{}{"fruit", "pastry"}, args)
+	})
+
+	t.Run("ColonPlaceholders", func(t *testing.T) {
+		// Arrange — verify Colon format also gets correct numbering.
+		inner := sqrl.Select("COUNT(*)").From("sq_items").Where(sqrl.Eq{"category": "fruit"}).
+			PlaceholderFormat(sqrl.Colon)
+		q := sqrl.Select("name").
+			Column(sqrl.Alias(inner, "cnt")).
+			From("sq_categories").
+			Where(sqrl.Eq{"name": "fruit"}).
+			PlaceholderFormat(sqrl.Colon)
+
+		sqlStr, args, err := q.ToSQL()
+		require.NoError(t, err)
+
+		assert.Equal(t,
+			"SELECT name, (SELECT COUNT(*) FROM sq_items WHERE category = :1) AS cnt "+
+				"FROM sq_categories WHERE name = :2",
+			sqlStr)
+		assert.Equal(t, []interface{}{"fruit", "fruit"}, args)
+	})
+
+	t.Run("AtPPlaceholders", func(t *testing.T) {
+		// Arrange — verify AtP format also gets correct numbering.
+		inner := sqrl.Select("COUNT(*)").From("sq_items").Where(sqrl.Eq{"category": "fruit"}).
+			PlaceholderFormat(sqrl.AtP)
+		q := sqrl.Select("name").
+			Column(sqrl.Alias(inner, "cnt")).
+			From("sq_categories").
+			Where(sqrl.Eq{"name": "fruit"}).
+			PlaceholderFormat(sqrl.AtP)
+
+		sqlStr, args, err := q.ToSQL()
+		require.NoError(t, err)
+
+		assert.Equal(t,
+			"SELECT name, (SELECT COUNT(*) FROM sq_items WHERE category = @p1) AS cnt "+
+				"FROM sq_categories WHERE name = @p2",
+			sqlStr)
+		assert.Equal(t, []interface{}{"fruit", "fruit"}, args)
 	})
 }

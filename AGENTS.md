@@ -85,10 +85,10 @@ Each SQL statement type follows a consistent file structure:
 Shared utilities:
 - `squirrel.go` — Core interfaces (`Sqlizer`, `Execer`, `Queryer`, `Runner`, `StdSql`), helper functions (`ExecWith`, `QueryWith`, `DebugSqlizer`, `WrapStdSql`), sentinel errors (`RunnerNotSet`, `RunnerNotQueryRunner`)
 - `squirrel_ctx.go` — Context-aware interfaces (`ExecerContext`, `QueryerContext`, `RunnerContext`, `StdSqlCtx`) and helpers (`ExecContextWith`, `QueryContextWith`, `WrapStdSqlCtx`)
-- `expr.go` — Expression types: `Eq`, `NotEq`, `Lt`, `Gt`, `LtOrEq`, `GtOrEq`, `Between`, `NotBetween`, `Like`, `NotLike`, `ILike`, `NotILike`, `And`, `Or`, `Not`; functions: `Expr()`, `ConcatExpr()`, `Alias()`, `Exists()`, `NotExists()`. `Eq`/`NotEq` accept `Sqlizer` values for `WHERE col IN (SELECT ...)` subqueries. `Lt`/`Gt`/`LtOrEq`/`GtOrEq` accept `Sqlizer` values for scalar subquery comparisons. `Not` wraps a single `Sqlizer` and negates it with `NOT (...)`. `Between`/`NotBetween` accept 2-element arrays or slices as values for `col BETWEEN ? AND ?` / `col NOT BETWEEN ? AND ?`. `Exists(Sqlizer)`/`NotExists(Sqlizer)` wrap a subquery with `EXISTS (...)` / `NOT EXISTS (...)`.
+- `expr.go` — Expression types: `Eq`, `NotEq`, `Lt`, `Gt`, `LtOrEq`, `GtOrEq`, `Between`, `NotBetween`, `Like`, `NotLike`, `ILike`, `NotILike`, `And`, `Or`, `Not`; functions: `Expr()`, `ConcatExpr()`, `Alias()`, `Exists()`, `NotExists()`. `Eq`/`NotEq` accept `Sqlizer` values for `WHERE col IN (SELECT ...)` subqueries. `Lt`/`Gt`/`LtOrEq`/`GtOrEq` accept `Sqlizer` values for scalar subquery comparisons. `Not` wraps a single `Sqlizer` and negates it with `NOT (...)`. `Between`/`NotBetween` accept 2-element arrays or slices as values for `col BETWEEN ? AND ?` / `col NOT BETWEEN ? AND ?`. `Exists(Sqlizer)`/`NotExists(Sqlizer)` wrap a subquery with `EXISTS (...)` / `NOT EXISTS (...)`. All map-based expression types (`Eq`, `NotEq`, `Lt`, `Gt`, `LtOrEq`, `GtOrEq`, `Like`, `NotLike`, `ILike`, `NotILike`, `Between`, `NotBetween`) automatically wrap multi-key output in parentheses to ensure correct SQL operator precedence when used inside `Or{}` or other conjunctions. `expr`, `aliasExpr`, and `concatExpr` implement `rawSqlizer` (via `toSQLRaw()`) to prevent double placeholder formatting when nested inside outer queries — their raw methods use `nestedToSQL()` for inner `Sqlizer` values.
 - `placeholder.go` — `PlaceholderFormat` interface and implementations: `Question`, `Dollar`, `Colon`, `AtP`; utility function `Placeholders(count)`
-- `where.go` — `wherePart` implementation
-- `part.go` — Generic `part` struct, `newPart`, `nestedToSql`, and `appendToSql` helper
+- `where.go` — `wherePart` implementation, `expandWhereArgs` (slice arg expansion for raw string predicates), `needsParens` (auto-parenthesization of OR expressions), `isExpandableSlice` helper
+- `part.go` — Generic `part` struct, `newPart`, `nestedToSql`, and `appendToSql` helper. `newPart` accepts `string`, `Sqlizer`, or any other value; non-string/non-Sqlizer values (e.g. `int`, `float64`, `bool`) are auto-wrapped as parameterized placeholders (`?` with bound arg). This enables `CaseBuilder.When()`, `.Else()`, etc. to accept literal values directly.
 - `row.go` — `RowScanner` interface and `Row` wrapper
 - `case.go` — `CaseBuilder`, `caseData`, `whenPart`, and `sqlizerBuffer` helper
 - `cte.go` — `CteBuilder`, `cteData`, `ctePart` for Common Table Expressions (`WITH` / `WITH RECURSIVE`)
@@ -126,7 +126,8 @@ The `Placeholders(count int) string` function generates a comma-separated list o
 - `Suffix()` / `SuffixExpr()` — add SQL after the statement
 
 **SelectBuilder** notable methods:
-- `Distinct()`, `Options()` — add SELECT options
+- `Distinct()` — add DISTINCT keyword (idempotent — multiple calls produce a single DISTINCT)
+- `Options()` — add SELECT options (e.g., `SQL_NO_CACHE`)
 - `Columns()`, `Column()`, `RemoveColumns()` — manage result columns
 - `From()`, `FromSelect()` — set FROM clause (supports subqueries)
 - `Join()`, `LeftJoin()`, `RightJoin()`, `InnerJoin()`, `CrossJoin()`, `FullJoin()`, `JoinClause()`
@@ -140,6 +141,7 @@ The `Placeholders(count int) string` function generates a comma-separated list o
 **InsertBuilder** notable methods:
 - `Into()`, `Columns()`, `Values()`
 - `SetMap()` — set columns and values from a `map[string]interface{}`
+- `SetColumn()` — add a single column and append its value to each existing row (enables conditional column/value building without producing invalid multi-row VALUES)
 - `Select()` — `INSERT ... SELECT` support
 - `Options()` — add keywords like `IGNORE` before INTO
 - `Returning()` — add `RETURNING` clause (PostgreSQL, SQLite 3.35+)
@@ -149,7 +151,7 @@ The `Placeholders(count int) string` function generates a comma-separated list o
 - `OnConflictWhere()` — add `WHERE` to the `DO UPDATE` action
 - `OnDuplicateKeyUpdate()`, `OnDuplicateKeyUpdateMap()` — MySQL `ON DUPLICATE KEY UPDATE`
 - `statementKeyword()` (private) — used by `Replace()` to change `INSERT` to `REPLACE`
-- `SafeInto()`, `SafeColumns()` — safe alternatives accepting `Ident` values for dynamic identifiers from user input
+- `SafeInto()`, `SafeColumns()`, `SafeSetColumn()` — safe alternatives accepting `Ident` values for dynamic identifiers from user input
 
 **UpdateBuilder** notable methods:
 - `Table()`, `Set()`, `SetMap()`
@@ -215,11 +217,15 @@ Do not add new dependencies without strong justification. This is a maintenance-
 - Builder data struct fields **must** be PascalCase (exported) because `lann/builder` accesses them via reflection.
 - `builder.Set`, `builder.Append`, and `builder.Extend` return `interface{}` and must be type-asserted back to the builder type.
 - All builder `init()` functions must call `builder.Register()` — forgetting this causes runtime panics.
-- When nesting `SelectBuilder` as a subquery (e.g., `FromSelect`, `INSERT ... SELECT`), the inner query's placeholder format must be reset to `Question` to prevent double-replacement by the outer query. `FromSelect` does this automatically; `InsertBuilder.Select()` does **not**.
+- When nesting `SelectBuilder` as a subquery (e.g., `FromSelect`, `INSERT ... SELECT`, `UpdateBuilder.Set()`, `InsertBuilder.Values()`), the library uses `nestedToSQL` internally to call `toSQLRaw()` and avoid double placeholder replacement. `FromSelect`, `Set()` with `Sqlizer` values, `VALUES` with `Sqlizer` values, `INSERT ... SELECT`, and `ON DUPLICATE KEY UPDATE` with `Sqlizer` values all handle this automatically — callers do not need to reset placeholder formats on the inner query.
 - When using `Sqlizer` values in `Eq`/`NotEq`/`Lt`/`Gt`/`LtOrEq`/`GtOrEq` (subquery in expression position), the expressions use `nestedToSQL` internally, which calls `toSQLRaw()` to prevent double placeholder replacement. This works automatically — callers do not need to reset placeholder formats on the inner query.
+- Expression wrapper types `expr` (from `Expr()`), `aliasExpr` (from `Alias()`), and `concatExpr` (from `ConcatExpr()`) implement `rawSqlizer` (via `toSQLRaw()`). Their raw methods use `nestedToSQL()` for inner `Sqlizer` values, preventing double placeholder formatting when these wrappers are nested inside outer queries. This ensures correct placeholder numbering for patterns like `Column(Alias(subquery, "alias"))`, `Prefix("WITH cte AS (?)", subquery)`, and `Column(ConcatExpr("COALESCE(", subquery, ", 0)"))` with Dollar/Colon/AtP formats.
 - `[]byte` and `[]uint8` are indistinguishable in Go — `Eq{"col": []uint8{1,2,3}}` will **not** produce an `IN` clause because `database/sql` treats `[]byte` as a single value.
+- A **nil** slice in `Eq` / `NotEq` (e.g., `Eq{"id": []uint64(nil)}`) produces `id IS NULL` / `id IS NOT NULL`. An explicitly empty (non-nil) slice `Eq{"id": []int{}}` still produces `(1=0)` (empty-IN identity). This matches the intuition that "no filter value" means NULL. (GitHub [#277](https://github.com/Masterminds/squirrel/issues/277))
+- Raw string `Where()` parts with slice or array arguments are automatically expanded: `Where("id IN ?", []int{1,2,3})` produces `id IN (?,?,?)` with args `[1, 2, 3]`. `[]byte` is excluded from expansion (treated as a single value). (GitHub [#383](https://github.com/Masterminds/squirrel/issues/383))
+- Raw string `Where()` parts containing ` OR ` are automatically wrapped in parentheses to prevent operator-precedence surprises when multiple `Where()` calls are combined with `AND`. Clauses containing only `AND` are not wrapped. Already-parenthesized clauses are not double-wrapped. (GitHub [#380](https://github.com/Masterminds/squirrel/issues/380))
 - The `DebugSqlizer` function is for debugging only — its output is not guaranteed to be valid SQL and must never be used for execution.
-- Empty `Eq{}` evaluates to `(1=1)` (true) and empty `And{}` also evaluates to `(1=1)`. Empty `Or{}` evaluates to `(1=0)` (false).
+- Empty `Eq{}` evaluates to `(1=1)` (true). Empty or nil `And{}` / `Or{}` evaluate to empty SQL (no-op) — they are silently omitted from `WHERE` clauses, meaning "no filter". This prevents the previous bug where nil `Or` produced `WHERE (1=0)` and filtered out all rows (GitHub [#382](https://github.com/Masterminds/squirrel/issues/382)).
 - `setRunWith` automatically wraps `StdSql` / `StdSqlCtx` implementations via `WrapStdSql` / `WrapStdSqlCtx` — callers don't need to wrap manually when using `RunWith`.
 - `Limit` and `Offset` are parameterized — they emit `LIMIT ?` / `OFFSET ?` with bound args (type `uint64`). The data struct fields are `*uint64` (nil means "not set", non-nil means "set", including zero). `RemoveLimit()`/`RemoveOffset()` reset to nil. This applies to all builders: `SelectBuilder`, `UpdateBuilder`, `DeleteBuilder`, `UnionBuilder`.
 

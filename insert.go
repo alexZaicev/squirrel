@@ -158,7 +158,7 @@ func (d *insertData) appendValuesToSQL(w io.Writer, args []any) ([]any, error) {
 		valueStrings := make([]string, len(row))
 		for v, val := range row {
 			if vs, ok := val.(Sqlizer); ok {
-				vsql, vargs, err := vs.ToSQL()
+				vsql, vargs, err := nestedToSQL(vs)
 				if err != nil {
 					return nil, err
 				}
@@ -184,7 +184,7 @@ func (d *insertData) appendSelectToSQL(w io.Writer, args []any) ([]any, error) {
 		return args, errors.New("select clause for insert statements are not set")
 	}
 
-	selectClause, sArgs, err := d.Select.ToSQL()
+	selectClause, sArgs, err := nestedToSQL(d.Select)
 	if err != nil {
 		return args, err
 	}
@@ -253,10 +253,7 @@ func (d *insertData) appendConflictToSQL(w io.Writer, args []any) ([]any, error)
 	}
 
 	if len(d.ConflictWhereParts) > 0 {
-		if _, err := io.WriteString(w, " WHERE "); err != nil {
-			return nil, err
-		}
-		args, err = appendToSQL(d.ConflictWhereParts, w, " AND ", args)
+		args, err = appendPrefixedToSQL(d.ConflictWhereParts, w, " WHERE ", args)
 		if err != nil {
 			return nil, err
 		}
@@ -282,7 +279,7 @@ func appendSetClauses(setClauses []setClause, w io.Writer, args []any) ([]any, e
 	for i, sc := range setClauses {
 		var valSQL string
 		if vs, ok := sc.value.(Sqlizer); ok {
-			vsql, vargs, err := vs.ToSQL()
+			vsql, vargs, err := nestedToSQL(vs)
 			if err != nil {
 				return nil, err
 			}
@@ -411,6 +408,47 @@ func (b InsertBuilder) Columns(columns ...string) InsertBuilder {
 // Values adds a single row's values to the query.
 func (b InsertBuilder) Values(values ...any) InsertBuilder {
 	return builder.Append(b, "Values", values).(InsertBuilder)
+}
+
+// SetColumn adds a single column name and appends the corresponding value to
+// every existing row. If no rows exist yet, a new single-value row is created.
+// This enables conditional, incremental column/value building without
+// producing invalid multi-row VALUES clauses.
+//
+// Ex:
+//
+//	q := sq.Insert("test").SetColumn("a", 1)
+//	if needB {
+//	    q = q.SetColumn("b", 2)
+//	}
+//	// INSERT INTO test (a,b) VALUES (?,?)
+//
+// WARNING: The column name is interpolated directly into the SQL string without
+// sanitization. NEVER pass unsanitized user input to this method.
+// For dynamic column names from user input, use SafeSetColumn instead.
+func (b InsertBuilder) SetColumn(column string, value interface{}) InsertBuilder {
+	data := builder.GetStruct(b).(insertData)
+
+	newCols := make([]string, len(data.Columns), len(data.Columns)+1)
+	copy(newCols, data.Columns)
+	newCols = append(newCols, column)
+
+	var newValues [][]interface{}
+	if len(data.Values) == 0 {
+		newValues = [][]interface{}{{value}}
+	} else {
+		newValues = make([][]interface{}, len(data.Values))
+		for i, row := range data.Values {
+			newRow := make([]interface{}, len(row), len(row)+1)
+			copy(newRow, row)
+			newRow = append(newRow, value)
+			newValues[i] = newRow
+		}
+	}
+
+	b = builder.Set(b, "Columns", newCols).(InsertBuilder)
+	b = builder.Set(b, "Values", newValues).(InsertBuilder)
+	return b
 }
 
 // Suffix adds an expression to the end of the query
@@ -592,4 +630,17 @@ func (b InsertBuilder) SafeInto(into Ident) InsertBuilder {
 //	sq.Insert("users").SafeColumns(cols...).Values(1, "John")
 func (b InsertBuilder) SafeColumns(columns ...Ident) InsertBuilder {
 	return builder.Extend(b, "Columns", identsToStrings(columns)).(InsertBuilder)
+}
+
+// SafeSetColumn adds a single column name (as a safe Ident) and appends the
+// corresponding value to every existing row. If no rows exist yet, a new
+// single-value row is created. This is the safe counterpart of SetColumn for
+// dynamic column names from user input.
+//
+// Ex:
+//
+//	col, _ := sq.QuoteIdent(userInput)
+//	q = q.SafeSetColumn(col, someValue)
+func (b InsertBuilder) SafeSetColumn(column Ident, value interface{}) InsertBuilder {
+	return b.SetColumn(column.String(), value)
 }

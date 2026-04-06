@@ -1430,3 +1430,178 @@ func TestInsertOnDuplicateKeyUpdateToSQL(t *testing.T) {
 		assert.Equal(t, []interface{}{1, "a", 2, "b"}, args)
 	})
 }
+
+// ---------------------------------------------------------------------------
+// SetColumn — conditional column/value building (GitHub #336)
+// ---------------------------------------------------------------------------
+
+func TestInsertSetColumnBasic(t *testing.T) {
+	// Arrange
+	createTable(t, "sq_ins_setcol_basic", "(id INTEGER, name TEXT, status TEXT)")
+
+	// Act — build up columns incrementally with SetColumn
+	_, err := sb.Insert("sq_ins_setcol_basic").
+		SetColumn("id", 1).
+		SetColumn("name", "test").
+		SetColumn("status", "active").
+		Exec()
+
+	// Assert
+	require.NoError(t, err)
+
+	var name, status string
+	err = db.QueryRow("SELECT name, status FROM sq_ins_setcol_basic WHERE id = 1").Scan(&name, &status)
+	require.NoError(t, err)
+	assert.Equal(t, "test", name)
+	assert.Equal(t, "active", status)
+}
+
+func TestInsertSetColumnConditional(t *testing.T) {
+	// Arrange
+	createTable(t, "sq_ins_setcol_cond", "(id INTEGER, name TEXT, note TEXT)")
+
+	// Act — conditionally add the "note" column
+	q := sb.Insert("sq_ins_setcol_cond").
+		SetColumn("id", 1).
+		SetColumn("name", "test")
+
+	includeNote := true
+	if includeNote {
+		q = q.SetColumn("note", "hello")
+	}
+
+	_, err := q.Exec()
+
+	// Assert
+	require.NoError(t, err)
+
+	var name, note string
+	err = db.QueryRow("SELECT name, note FROM sq_ins_setcol_cond WHERE id = 1").Scan(&name, &note)
+	require.NoError(t, err)
+	assert.Equal(t, "test", name)
+	assert.Equal(t, "hello", note)
+}
+
+func TestInsertSetColumnConditionalSkipped(t *testing.T) {
+	// Arrange
+	createTable(t, "sq_ins_setcol_skip", "(id INTEGER, name TEXT)")
+
+	// Act — condition is false, so only 2 columns
+	q := sb.Insert("sq_ins_setcol_skip").
+		SetColumn("id", 1).
+		SetColumn("name", "test")
+
+	includeExtra := false
+	if includeExtra {
+		// This would fail because the table doesn't have an "extra" column,
+		// but we never add it.
+		q = q.SetColumn("extra", "nope")
+	}
+
+	_, err := q.Exec()
+
+	// Assert
+	require.NoError(t, err)
+
+	var name string
+	err = db.QueryRow("SELECT name FROM sq_ins_setcol_skip WHERE id = 1").Scan(&name)
+	require.NoError(t, err)
+	assert.Equal(t, "test", name)
+}
+
+func TestInsertSetColumnMixedWithColumnsValues(t *testing.T) {
+	// Arrange
+	createTable(t, "sq_ins_setcol_mix", "(id INTEGER, name TEXT, tag TEXT)")
+
+	// Act — start with Columns().Values(), then extend with SetColumn()
+	_, err := sb.Insert("sq_ins_setcol_mix").
+		Columns("id", "name").
+		Values(1, "test").
+		SetColumn("tag", "important").
+		Exec()
+
+	// Assert
+	require.NoError(t, err)
+
+	var name, tag string
+	err = db.QueryRow("SELECT name, tag FROM sq_ins_setcol_mix WHERE id = 1").Scan(&name, &tag)
+	require.NoError(t, err)
+	assert.Equal(t, "test", name)
+	assert.Equal(t, "important", tag)
+}
+
+func TestInsertSetColumnMultiRow(t *testing.T) {
+	// Arrange
+	createTable(t, "sq_ins_setcol_multi", "(id INTEGER, status TEXT)")
+
+	// Act — multiple rows, then SetColumn appends to each
+	_, err := sb.Insert("sq_ins_setcol_multi").
+		Columns("id").
+		Values(1).
+		Values(2).
+		Values(3).
+		SetColumn("status", "active").
+		Exec()
+
+	// Assert
+	require.NoError(t, err)
+
+	var count int
+	err = db.QueryRow("SELECT COUNT(*) FROM sq_ins_setcol_multi WHERE status = 'active'").Scan(&count)
+	require.NoError(t, err)
+	assert.Equal(t, 3, count)
+}
+
+func TestInsertSetColumnNullValue(t *testing.T) {
+	// Arrange
+	createTable(t, "sq_ins_setcol_null", "(id INTEGER, name TEXT)")
+
+	// Act
+	_, err := sb.Insert("sq_ins_setcol_null").
+		SetColumn("id", 1).
+		SetColumn("name", nil).
+		Exec()
+
+	// Assert
+	require.NoError(t, err)
+
+	var name sql.NullString
+	err = db.QueryRow("SELECT name FROM sq_ins_setcol_null WHERE id = 1").Scan(&name)
+	require.NoError(t, err)
+	assert.False(t, name.Valid) // NULL
+}
+
+func TestInsertSetColumnDollarPlaceholders(t *testing.T) {
+	// Verify correct Dollar placeholder numbering with SetColumn.
+	q := sqrl.Insert("test").
+		SetColumn("a", 1).
+		SetColumn("b", 2).
+		SetColumn("c", 3).
+		PlaceholderFormat(sqrl.Dollar)
+
+	sqlStr, args, err := q.ToSQL()
+	require.NoError(t, err)
+	assert.Equal(t, "INSERT INTO test (a,b,c) VALUES ($1,$2,$3)", sqlStr)
+	assert.Equal(t, []interface{}{1, 2, 3}, args)
+}
+
+func TestInsertSetColumnWithReturning(t *testing.T) {
+	if isMySQL() {
+		t.Skip("MySQL does not support RETURNING")
+	}
+
+	// Arrange
+	createTable(t, "sq_ins_setcol_ret", "(id INTEGER, name TEXT)")
+
+	// Act
+	var id int
+	err := sb.Insert("sq_ins_setcol_ret").
+		SetColumn("id", 42).
+		SetColumn("name", "test").
+		Suffix("RETURNING id").
+		QueryRow().Scan(&id)
+
+	// Assert
+	require.NoError(t, err)
+	assert.Equal(t, 42, id)
+}

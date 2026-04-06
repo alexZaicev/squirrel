@@ -94,7 +94,7 @@ func (d *updateData) toSQLRaw() (sqlStr string, args []any, err error) {
 	for i, setClause := range d.SetClauses {
 		var valSQL string
 		if vs, ok := setClause.value.(Sqlizer); ok {
-			vsql, vargs, err := vs.ToSQL()
+			vsql, vargs, err := nestedToSQL(vs)
 			if err != nil {
 				return "", nil, err
 			}
@@ -121,8 +121,7 @@ func (d *updateData) toSQLRaw() (sqlStr string, args []any, err error) {
 	}
 
 	if len(d.WhereParts) > 0 {
-		sql.WriteString(" WHERE ")
-		args, err = appendToSQL(d.WhereParts, sql, " AND ", args)
+		args, err = appendPrefixedToSQL(d.WhereParts, sql, " WHERE ", args)
 		if err != nil {
 			return
 		}

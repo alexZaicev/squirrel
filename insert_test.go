@@ -501,3 +501,269 @@ func TestInsertBuilderReturningWithOnConflict(t *testing.T) {
 	expectedArgs := []any{1, "John"}
 	assert.Equal(t, expectedArgs, args)
 }
+
+func TestInsertBuilderSelectSubqueryDollarPlaceholders(t *testing.T) {
+	// Regression test: INSERT ... SELECT with Dollar placeholders should
+	// number all placeholders sequentially without duplicates.
+	b := Insert("dst").
+		Columns("a", "b").
+		Select(Select("x", "y").From("src").Where("z = ?", 1)).
+		PlaceholderFormat(Dollar)
+
+	sql, args, err := b.ToSQL()
+	assert.NoError(t, err)
+
+	expectedSQL := "INSERT INTO dst (a,b) SELECT x, y FROM src WHERE z = $1"
+	assert.Equal(t, expectedSQL, sql)
+
+	expectedArgs := []any{1}
+	assert.Equal(t, expectedArgs, args)
+}
+
+func TestInsertBuilderValuesSqlizerDollarPlaceholders(t *testing.T) {
+	// Regression test: Sqlizer values in INSERT VALUES with Dollar
+	// placeholders should number sequentially.
+	b := Insert("t").
+		Columns("a", "b").
+		Values(1, Expr("(SELECT x FROM y WHERE z = ?)", 2)).
+		PlaceholderFormat(Dollar)
+
+	sql, args, err := b.ToSQL()
+	assert.NoError(t, err)
+
+	expectedSQL := "INSERT INTO t (a,b) VALUES ($1,(SELECT x FROM y WHERE z = $2))"
+	assert.Equal(t, expectedSQL, sql)
+
+	expectedArgs := []any{1, 2}
+	assert.Equal(t, expectedArgs, args)
+}
+
+func TestInsertBuilderOnDuplicateKeySubqueryDollarPlaceholders(t *testing.T) {
+	// Regression test: ON DUPLICATE KEY UPDATE with subquery value and Dollar
+	// placeholders should number sequentially.
+	b := Insert("t").
+		Columns("a", "b").
+		Values(1, 2).
+		OnDuplicateKeyUpdate("b", Select("x").From("y").Where("z = ?", 3)).
+		PlaceholderFormat(Dollar)
+
+	sql, args, err := b.ToSQL()
+	assert.NoError(t, err)
+
+	expectedSQL := "INSERT INTO t (a,b) VALUES ($1,$2) ON DUPLICATE KEY UPDATE b = (SELECT x FROM y WHERE z = $3)"
+	assert.Equal(t, expectedSQL, sql)
+
+	expectedArgs := []any{1, 2, 3}
+	assert.Equal(t, expectedArgs, args)
+}
+
+// ---------------------------------------------------------------------------
+// SetColumn — conditional column/value building (GitHub #336)
+// ---------------------------------------------------------------------------
+
+func TestInsertBuilderSetColumnBasic(t *testing.T) {
+	// Build up columns one at a time.
+	b := Insert("test").
+		SetColumn("a", 1).
+		SetColumn("b", 2).
+		SetColumn("c", 3)
+
+	sql, args, err := b.ToSQL()
+	assert.NoError(t, err)
+
+	expectedSQL := "INSERT INTO test (a,b,c) VALUES (?,?,?)"
+	assert.Equal(t, expectedSQL, sql)
+
+	expectedArgs := []any{1, 2, 3}
+	assert.Equal(t, expectedArgs, args)
+}
+
+func TestInsertBuilderSetColumnConditional(t *testing.T) {
+	// Simulate conditional column addition — the core use case from #336.
+	b := Insert("test").
+		SetColumn("a", 1).
+		SetColumn("b", 2)
+
+	needC := true
+	if needC {
+		b = b.SetColumn("c", 3)
+	}
+
+	sql, args, err := b.ToSQL()
+	assert.NoError(t, err)
+
+	expectedSQL := "INSERT INTO test (a,b,c) VALUES (?,?,?)"
+	assert.Equal(t, expectedSQL, sql)
+
+	expectedArgs := []any{1, 2, 3}
+	assert.Equal(t, expectedArgs, args)
+}
+
+func TestInsertBuilderSetColumnConditionalSkipped(t *testing.T) {
+	// Simulate conditional column addition where the condition is false.
+	b := Insert("test").
+		SetColumn("a", 1).
+		SetColumn("b", 2)
+
+	needC := false
+	if needC {
+		b = b.SetColumn("c", 3)
+	}
+
+	sql, args, err := b.ToSQL()
+	assert.NoError(t, err)
+
+	expectedSQL := "INSERT INTO test (a,b) VALUES (?,?)"
+	assert.Equal(t, expectedSQL, sql)
+
+	expectedArgs := []any{1, 2}
+	assert.Equal(t, expectedArgs, args)
+}
+
+func TestInsertBuilderSetColumnWithExistingValues(t *testing.T) {
+	// Mix Columns().Values() with SetColumn() — SetColumn appends to each row.
+	b := Insert("test").
+		Columns("a", "b").
+		Values(1, 2).
+		SetColumn("c", 3)
+
+	sql, args, err := b.ToSQL()
+	assert.NoError(t, err)
+
+	expectedSQL := "INSERT INTO test (a,b,c) VALUES (?,?,?)"
+	assert.Equal(t, expectedSQL, sql)
+
+	expectedArgs := []any{1, 2, 3}
+	assert.Equal(t, expectedArgs, args)
+}
+
+func TestInsertBuilderSetColumnMultiRow(t *testing.T) {
+	// SetColumn with multiple existing rows — value is appended to each row.
+	b := Insert("test").
+		Columns("a").
+		Values(1).
+		Values(2).
+		Values(3).
+		SetColumn("b", 99)
+
+	sql, args, err := b.ToSQL()
+	assert.NoError(t, err)
+
+	expectedSQL := "INSERT INTO test (a,b) VALUES (?,?),(?,?),(?,?)"
+	assert.Equal(t, expectedSQL, sql)
+
+	expectedArgs := []any{1, 99, 2, 99, 3, 99}
+	assert.Equal(t, expectedArgs, args)
+}
+
+func TestInsertBuilderSetColumnDollarPlaceholders(t *testing.T) {
+	b := Insert("test").
+		SetColumn("a", 1).
+		SetColumn("b", 2).
+		SetColumn("c", 3).
+		PlaceholderFormat(Dollar)
+
+	sql, args, err := b.ToSQL()
+	assert.NoError(t, err)
+
+	expectedSQL := "INSERT INTO test (a,b,c) VALUES ($1,$2,$3)"
+	assert.Equal(t, expectedSQL, sql)
+
+	expectedArgs := []any{1, 2, 3}
+	assert.Equal(t, expectedArgs, args)
+}
+
+func TestInsertBuilderSetColumnWithSqlizer(t *testing.T) {
+	// SetColumn with a Sqlizer value (e.g., subquery expression).
+	b := Insert("test").
+		SetColumn("a", 1).
+		SetColumn("b", Expr("(SELECT x FROM y WHERE z = ?)", 2))
+
+	sql, args, err := b.ToSQL()
+	assert.NoError(t, err)
+
+	expectedSQL := "INSERT INTO test (a,b) VALUES (?,(SELECT x FROM y WHERE z = ?))"
+	assert.Equal(t, expectedSQL, sql)
+
+	expectedArgs := []any{1, 2}
+	assert.Equal(t, expectedArgs, args)
+}
+
+func TestInsertBuilderSetColumnWithOnConflict(t *testing.T) {
+	b := Insert("users").
+		SetColumn("id", 1).
+		SetColumn("name", "John").
+		OnConflictColumns("id").
+		OnConflictDoNothing()
+
+	sql, args, err := b.ToSQL()
+	assert.NoError(t, err)
+
+	expectedSQL := "INSERT INTO users (id,name) VALUES (?,?) ON CONFLICT (id) DO NOTHING"
+	assert.Equal(t, expectedSQL, sql)
+
+	expectedArgs := []any{1, "John"}
+	assert.Equal(t, expectedArgs, args)
+}
+
+func TestInsertBuilderSetColumnWithReturning(t *testing.T) {
+	b := Insert("users").
+		SetColumn("name", "John").
+		Returning("id")
+
+	sql, args, err := b.ToSQL()
+	assert.NoError(t, err)
+
+	expectedSQL := "INSERT INTO users (name) VALUES (?) RETURNING id"
+	assert.Equal(t, expectedSQL, sql)
+
+	expectedArgs := []any{"John"}
+	assert.Equal(t, expectedArgs, args)
+}
+
+func TestInsertBuilderSetColumnSingle(t *testing.T) {
+	// Single column via SetColumn.
+	b := Insert("test").SetColumn("a", 42)
+
+	sql, args, err := b.ToSQL()
+	assert.NoError(t, err)
+
+	expectedSQL := "INSERT INTO test (a) VALUES (?)"
+	assert.Equal(t, expectedSQL, sql)
+
+	expectedArgs := []any{42}
+	assert.Equal(t, expectedArgs, args)
+}
+
+func TestInsertBuilderSetColumnNilValue(t *testing.T) {
+	b := Insert("test").
+		SetColumn("a", 1).
+		SetColumn("b", nil)
+
+	sql, args, err := b.ToSQL()
+	assert.NoError(t, err)
+
+	expectedSQL := "INSERT INTO test (a,b) VALUES (?,?)"
+	assert.Equal(t, expectedSQL, sql)
+
+	expectedArgs := []any{1, nil}
+	assert.Equal(t, expectedArgs, args)
+}
+
+func TestInsertBuilderSafeSetColumn(t *testing.T) {
+	col, err := QuoteIdent("name")
+	assert.NoError(t, err)
+
+	b := Insert("test").
+		SetColumn("id", 1).
+		SafeSetColumn(col, "John")
+
+	sql, args, err := b.ToSQL()
+	assert.NoError(t, err)
+
+	expectedSQL := `INSERT INTO test (id,"name") VALUES (?,?)`
+	assert.Equal(t, expectedSQL, sql)
+
+	expectedArgs := []any{1, "John"}
+	assert.Equal(t, expectedArgs, args)
+}

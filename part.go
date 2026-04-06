@@ -1,7 +1,7 @@
 package squirrel
 
 import (
-	"fmt"
+	"bytes"
 	"io"
 )
 
@@ -24,7 +24,10 @@ func (p part) ToSQL() (sql string, args []any, err error) {
 		sql = pred
 		args = p.args
 	default:
-		err = fmt.Errorf("expected string or Sqlizer, not %T", pred)
+		// Auto-wrap non-string, non-Sqlizer values (e.g. int, float64, bool)
+		// as parameterized placeholders so they can be used in CASE WHEN/THEN.
+		sql = "?"
+		args = []any{pred}
 	}
 	return
 }
@@ -37,7 +40,8 @@ func nestedToSQL(s Sqlizer) (string, []any, error) {
 }
 
 func appendToSQL(parts []Sqlizer, w io.Writer, sep string, args []any) ([]any, error) {
-	for i, p := range parts {
+	first := true
+	for _, p := range parts {
 		partSQL, partArgs, err := nestedToSQL(p)
 		if err != nil {
 			return nil, err
@@ -45,18 +49,43 @@ func appendToSQL(parts []Sqlizer, w io.Writer, sep string, args []any) ([]any, e
 			continue
 		}
 
-		if i > 0 {
+		if !first {
 			_, err := io.WriteString(w, sep)
 			if err != nil {
 				return nil, err
 			}
 		}
+		first = false
 
 		_, err = io.WriteString(w, partSQL)
 		if err != nil {
 			return nil, err
 		}
 		args = append(args, partArgs...)
+	}
+	return args, nil
+}
+
+// appendPrefixedToSQL writes prefix followed by the SQL parts only if any
+// part produces non-empty SQL. This prevents dangling keywords like "WHERE "
+// when all parts evaluate to empty SQL (e.g., nil/empty Or/And clauses).
+func appendPrefixedToSQL(parts []Sqlizer, w io.Writer, prefix string, args []any) ([]any, error) {
+	if len(parts) == 0 {
+		return args, nil
+	}
+	var buf bytes.Buffer
+	var err error
+	args, err = appendToSQL(parts, &buf, " AND ", args)
+	if err != nil {
+		return args, err
+	}
+	if buf.Len() > 0 {
+		if _, err = io.WriteString(w, prefix); err != nil {
+			return args, err
+		}
+		if _, err = buf.WriteTo(w); err != nil {
+			return args, err
+		}
 	}
 	return args, nil
 }
