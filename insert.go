@@ -58,6 +58,16 @@ func (d *insertData) QueryRow() RowScanner {
 }
 
 func (d *insertData) ToSQL() (sqlStr string, args []any, err error) {
+	sqlStr, args, err = d.toSQLRaw()
+	if err != nil {
+		return
+	}
+
+	sqlStr, err = d.PlaceholderFormat.ReplacePlaceholders(sqlStr)
+	return
+}
+
+func (d *insertData) toSQLRaw() (sqlStr string, args []any, err error) {
 	if len(d.Into) == 0 {
 		err = errors.New("insert statements must specify a table")
 		return
@@ -130,7 +140,7 @@ func (d *insertData) ToSQL() (sqlStr string, args []any, err error) {
 		}
 	}
 
-	sqlStr, err = d.PlaceholderFormat.ReplacePlaceholders(sql.String())
+	sqlStr = sql.String()
 	return
 }
 
@@ -345,6 +355,11 @@ func (b InsertBuilder) Scan(dest ...any) error {
 func (b InsertBuilder) ToSQL() (string, []any, error) {
 	data := builder.GetStruct(b).(insertData)
 	return data.ToSQL()
+}
+
+func (b InsertBuilder) toSQLRaw() (string, []any, error) {
+	data := builder.GetStruct(b).(insertData)
+	return data.toSQLRaw()
 }
 
 // MustSQL builds the query into a SQL string and bound args.

@@ -56,6 +56,16 @@ func (d *updateData) QueryRow() RowScanner {
 }
 
 func (d *updateData) ToSQL() (sqlStr string, args []any, err error) {
+	sqlStr, args, err = d.toSQLRaw()
+	if err != nil {
+		return
+	}
+
+	sqlStr, err = d.PlaceholderFormat.ReplacePlaceholders(sqlStr)
+	return
+}
+
+func (d *updateData) toSQLRaw() (sqlStr string, args []any, err error) {
 	if len(d.Table) == 0 {
 		err = fmt.Errorf("update statements must specify a table")
 		return
@@ -146,7 +156,7 @@ func (d *updateData) ToSQL() (sqlStr string, args []any, err error) {
 		}
 	}
 
-	sqlStr, err = d.PlaceholderFormat.ReplacePlaceholders(sql.String())
+	sqlStr = sql.String()
 	return
 }
 
@@ -200,6 +210,11 @@ func (b UpdateBuilder) Scan(dest ...any) error {
 func (b UpdateBuilder) ToSQL() (string, []any, error) {
 	data := builder.GetStruct(b).(updateData)
 	return data.ToSQL()
+}
+
+func (b UpdateBuilder) toSQLRaw() (string, []any, error) {
+	data := builder.GetStruct(b).(updateData)
+	return data.toSQLRaw()
 }
 
 // MustSQL builds the query into a SQL string and bound args.

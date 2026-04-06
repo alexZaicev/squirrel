@@ -63,7 +63,7 @@ Execution is abstracted through several interfaces in `squirrel.go` and `squirre
 
 ### Builder pattern
 
-All builders (`SelectBuilder`, `InsertBuilder`, `UpdateBuilder`, `DeleteBuilder`, `CaseBuilder`) use the **immutable builder pattern** via the `github.com/lann/builder` package. Each builder is a type alias over `builder.Builder`:
+All builders (`SelectBuilder`, `InsertBuilder`, `UpdateBuilder`, `DeleteBuilder`, `CaseBuilder`, `UnionBuilder`, `CteBuilder`) use the **immutable builder pattern** via the `github.com/lann/builder` package. Each builder is a type alias over `builder.Builder`:
 
 ```go
 type SelectBuilder builder.Builder
@@ -91,7 +91,8 @@ Shared utilities:
 - `part.go` — Generic `part` struct, `newPart`, `nestedToSql`, and `appendToSql` helper
 - `row.go` — `RowScanner` interface and `Row` wrapper
 - `case.go` — `CaseBuilder`, `caseData`, `whenPart`, and `sqlizerBuffer` helper
-- `statement.go` — `StatementBuilderType` and package-level convenience functions (`Select()`, `Insert()`, `Replace()`, `Update()`, `Delete()`, `Case()`)
+- `cte.go` — `CteBuilder`, `cteData`, `ctePart` for Common Table Expressions (`WITH` / `WITH RECURSIVE`)
+- `statement.go` — `StatementBuilderType` and package-level convenience functions (`Select()`, `Insert()`, `Replace()`, `Update()`, `Delete()`, `Case()`, `Union()`, `UnionAll()`, `Intersect()`, `Except()`, `With()`, `WithRecursive()`, `WithColumns()`, `WithRecursiveColumns()`)
 - `stmtcacher.go` — `Preparer`, `DBProxy`, and `StmtCache` for caching prepared statements
 - `stmtcacher_ctx.go` / `stmtcacher_noctx.go` — Build-tag split for Go >= 1.8 context support (`NewStmtCache` constructor lives here)
 
@@ -147,6 +148,13 @@ The `Placeholders(count int) string` function generates a comma-separated list o
 **DeleteBuilder** notable methods:
 - `From()`, `Where()`, `OrderBy()`, `Limit()`, `Offset()`
 - `Query()` — useful with `RETURNING` clauses
+
+**CteBuilder** notable methods:
+- `With()`, `WithRecursive()` — add CTE definitions (`WITH name AS (...)`)
+- `WithColumns()`, `WithRecursiveColumns()` — add CTEs with explicit column lists (`WITH name(col1, col2) AS (...)`)
+- `Statement()` — set the main query (any `Sqlizer`: SELECT, INSERT, UPDATE, DELETE, UNION, etc.)
+- `Suffix()`, `SuffixExpr()` — append clauses after the main statement
+- Package-level constructors: `With()`, `WithRecursive()`, `WithColumns()`, `WithRecursiveColumns()`
 
 ## Code style
 

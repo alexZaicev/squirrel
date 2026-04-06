@@ -30,6 +30,16 @@ func (d *deleteData) Exec() (sql.Result, error) {
 }
 
 func (d *deleteData) ToSQL() (sqlStr string, args []any, err error) {
+	sqlStr, args, err = d.toSQLRaw()
+	if err != nil {
+		return
+	}
+
+	sqlStr, err = d.PlaceholderFormat.ReplacePlaceholders(sqlStr)
+	return
+}
+
+func (d *deleteData) toSQLRaw() (sqlStr string, args []any, err error) {
 	if len(d.From) == 0 {
 		err = fmt.Errorf("delete statements must specify a From table")
 		return
@@ -85,7 +95,7 @@ func (d *deleteData) ToSQL() (sqlStr string, args []any, err error) {
 		}
 	}
 
-	sqlStr, err = d.PlaceholderFormat.ReplacePlaceholders(sql.String())
+	sqlStr = sql.String()
 	return
 }
 
@@ -125,6 +135,11 @@ func (b DeleteBuilder) Exec() (sql.Result, error) {
 func (b DeleteBuilder) ToSQL() (string, []any, error) {
 	data := builder.GetStruct(b).(deleteData)
 	return data.ToSQL()
+}
+
+func (b DeleteBuilder) toSQLRaw() (string, []any, error) {
+	data := builder.GetStruct(b).(deleteData)
+	return data.toSQLRaw()
 }
 
 // MustSQL builds the query into a SQL string and bound args.
