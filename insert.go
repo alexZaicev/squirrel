@@ -21,6 +21,7 @@ type insertData struct {
 	Into                string
 	Columns             []string
 	Values              [][]any
+	Returning           []string
 	Suffixes            []Sqlizer
 	Select              *SelectBuilder
 	ConflictColumns     []string
@@ -114,6 +115,11 @@ func (d *insertData) ToSQL() (sqlStr string, args []any, err error) {
 
 	if args, err = d.appendDuplicateKeyToSQL(sql, args); err != nil {
 		return
+	}
+
+	if len(d.Returning) > 0 {
+		sql.WriteString(" RETURNING ")
+		sql.WriteString(strings.Join(d.Returning, ", "))
 	}
 
 	if len(d.Suffixes) > 0 {
@@ -389,6 +395,17 @@ func (b InsertBuilder) Suffix(sql string, args ...any) InsertBuilder {
 // SuffixExpr adds an expression to the end of the query
 func (b InsertBuilder) SuffixExpr(expr Sqlizer) InsertBuilder {
 	return builder.Append(b, "Suffixes", expr).(InsertBuilder)
+}
+
+// Returning adds RETURNING expressions to the query.
+//
+// Ex:
+//
+//	Insert("users").Columns("name").Values("John").
+//		Returning("id", "created_at")
+//	// INSERT INTO users (name) VALUES (?) RETURNING id, created_at
+func (b InsertBuilder) Returning(columns ...string) InsertBuilder {
+	return builder.Extend(b, "Returning", columns).(InsertBuilder)
 }
 
 // SetMap set columns and values for insert builder from a map of column name and value

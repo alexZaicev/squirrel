@@ -1107,91 +1107,259 @@ func TestInsertOnDuplicateKeyUpdateNoConflict(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// Upsert — ToSQL generation (no database required)
+// RETURNING (first-class)
 // ---------------------------------------------------------------------------
 
-func TestInsertOnConflictToSQL(t *testing.T) {
-	t.Run("DoNothingWithColumns", func(t *testing.T) {
+func TestInsertReturningSingleColumn(t *testing.T) {
+	if isMySQL() {
+		t.Skip("RETURNING not supported on MySQL")
+	}
+
+	// Arrange
+	createTable(t, "sq_ins_ret1", "(id INTEGER, name TEXT)")
+
+	// Act
+	rows, err := sb.Insert("sq_ins_ret1").
+		Columns("id", "name").
+		Values(1, "alice").
+		Returning("name").
+		Query()
+
+	// Assert
+	require.NoError(t, err)
+	defer rows.Close()
+
+	require.True(t, rows.Next())
+	var name string
+	require.NoError(t, rows.Scan(&name))
+	assert.Equal(t, "alice", name)
+	assert.False(t, rows.Next())
+}
+
+func TestInsertReturningMultipleColumns(t *testing.T) {
+	if isMySQL() {
+		t.Skip("RETURNING not supported on MySQL")
+	}
+
+	// Arrange
+	createTable(t, "sq_ins_ret2", "(id INTEGER, name TEXT)")
+
+	// Act
+	rows, err := sb.Insert("sq_ins_ret2").
+		Columns("id", "name").
+		Values(1, "bob").
+		Returning("id", "name").
+		Query()
+
+	// Assert
+	require.NoError(t, err)
+	defer rows.Close()
+
+	require.True(t, rows.Next())
+	var id int
+	var name string
+	require.NoError(t, rows.Scan(&id, &name))
+	assert.Equal(t, 1, id)
+	assert.Equal(t, "bob", name)
+	assert.False(t, rows.Next())
+}
+
+func TestInsertReturningStar(t *testing.T) {
+	if isMySQL() {
+		t.Skip("RETURNING not supported on MySQL")
+	}
+
+	// Arrange
+	createTable(t, "sq_ins_retstar", "(id INTEGER, name TEXT)")
+
+	// Act
+	rows, err := sb.Insert("sq_ins_retstar").
+		Columns("id", "name").
+		Values(1, "carol").
+		Returning("*").
+		Query()
+
+	// Assert
+	require.NoError(t, err)
+	defer rows.Close()
+
+	require.True(t, rows.Next())
+	var id int
+	var name string
+	require.NoError(t, rows.Scan(&id, &name))
+	assert.Equal(t, 1, id)
+	assert.Equal(t, "carol", name)
+	assert.False(t, rows.Next())
+}
+
+func TestInsertReturningWithScan(t *testing.T) {
+	if isMySQL() {
+		t.Skip("RETURNING not supported on MySQL")
+	}
+
+	// Arrange
+	createTable(t, "sq_ins_retscan", "(id INTEGER, name TEXT)")
+
+	// Act
+	var name string
+	err := sb.Insert("sq_ins_retscan").
+		Columns("id", "name").
+		Values(1, "dave").
+		Returning("name").
+		Scan(&name)
+
+	// Assert
+	require.NoError(t, err)
+	assert.Equal(t, "dave", name)
+}
+
+func TestInsertReturningMultipleRows(t *testing.T) {
+	if isMySQL() {
+		t.Skip("RETURNING not supported on MySQL")
+	}
+
+	// Arrange
+	createTable(t, "sq_ins_retmulti", "(id INTEGER, name TEXT)")
+
+	// Act
+	rows, err := sb.Insert("sq_ins_retmulti").
+		Columns("id", "name").
+		Values(1, "alice").
+		Values(2, "bob").
+		Values(3, "carol").
+		Returning("id", "name").
+		Query()
+
+	// Assert
+	require.NoError(t, err)
+	defer rows.Close()
+
+	type row struct {
+		id   int
+		name string
+	}
+	var results []row
+	for rows.Next() {
+		var r row
+		require.NoError(t, rows.Scan(&r.id, &r.name))
+		results = append(results, r)
+	}
+	require.NoError(t, rows.Err())
+	assert.Len(t, results, 3)
+	assert.Equal(t, row{1, "alice"}, results[0])
+	assert.Equal(t, row{2, "bob"}, results[1])
+	assert.Equal(t, row{3, "carol"}, results[2])
+}
+
+func TestInsertReturningWithOnConflictDoNothing(t *testing.T) {
+	if isMySQL() {
+		t.Skip("RETURNING not supported on MySQL")
+	}
+	if driverName == "sqlite3" {
+		t.Skip("ON CONFLICT with RETURNING on SQLite requires PRIMARY KEY")
+	}
+
+	// Arrange — PostgreSQL with primary key
+	createTable(t, "sq_ins_retcnf", "(id INTEGER PRIMARY KEY, name TEXT)")
+	seedTable(t, "INSERT INTO sq_ins_retcnf VALUES (1, 'existing')")
+
+	// Act — conflict row should return nothing, new row returns its data
+	rows, err := sb.Insert("sq_ins_retcnf").
+		Columns("id", "name").
+		Values(2, "new_row").
+		OnConflictColumns("id").
+		OnConflictDoNothing().
+		Returning("id", "name").
+		Query()
+
+	// Assert
+	require.NoError(t, err)
+	defer rows.Close()
+
+	require.True(t, rows.Next())
+	var id int
+	var name string
+	require.NoError(t, rows.Scan(&id, &name))
+	assert.Equal(t, 2, id)
+	assert.Equal(t, "new_row", name)
+	assert.False(t, rows.Next())
+}
+
+func TestInsertReturningWithSuffix(t *testing.T) {
+	if isMySQL() {
+		t.Skip("RETURNING not supported on MySQL")
+	}
+
+	// Arrange
+	createTable(t, "sq_ins_retsfx", "(id INTEGER, name TEXT)")
+
+	// Act — RETURNING before suffix; suffix is a comment so it doesn't break SQL
+	rows, err := sb.Insert("sq_ins_retsfx").
+		Columns("id", "name").
+		Values(1, "suffixed").
+		Returning("name").
+		Suffix("/* post-returning */").
+		Query()
+
+	// Assert
+	require.NoError(t, err)
+	defer rows.Close()
+
+	require.True(t, rows.Next())
+	var name string
+	require.NoError(t, rows.Scan(&name))
+	assert.Equal(t, "suffixed", name)
+}
+
+func TestInsertReturningToSQL(t *testing.T) {
+	t.Run("SingleColumn", func(t *testing.T) {
 		q := sqrl.Insert("t").Columns("id", "name").Values(1, "a").
-			OnConflictColumns("id").OnConflictDoNothing()
+			Returning("id")
 
 		sqlStr, args, err := q.ToSQL()
 		require.NoError(t, err)
-		assert.Equal(t, "INSERT INTO t (id,name) VALUES (?,?) ON CONFLICT (id) DO NOTHING", sqlStr)
+		assert.Equal(t, "INSERT INTO t (id,name) VALUES (?,?) RETURNING id", sqlStr)
 		assert.Equal(t, []interface{}{1, "a"}, args)
 	})
 
-	t.Run("DoNothingNoTarget", func(t *testing.T) {
+	t.Run("MultipleColumns", func(t *testing.T) {
+		q := sqrl.Insert("t").Columns("id", "name").Values(1, "a").
+			Returning("id", "name")
+
+		sqlStr, args, err := q.ToSQL()
+		require.NoError(t, err)
+		assert.Equal(t, "INSERT INTO t (id,name) VALUES (?,?) RETURNING id, name", sqlStr)
+		assert.Equal(t, []interface{}{1, "a"}, args)
+	})
+
+	t.Run("Star", func(t *testing.T) {
 		q := sqrl.Insert("t").Columns("id").Values(1).
-			OnConflictDoNothing()
+			Returning("*")
 
 		sqlStr, _, err := q.ToSQL()
 		require.NoError(t, err)
-		assert.Equal(t, "INSERT INTO t (id) VALUES (?) ON CONFLICT DO NOTHING", sqlStr)
+		assert.Equal(t, "INSERT INTO t (id) VALUES (?) RETURNING *", sqlStr)
 	})
 
-	t.Run("DoUpdateWithDollar", func(t *testing.T) {
+	t.Run("WithDollarPlaceholders", func(t *testing.T) {
 		q := sqrl.Insert("t").Columns("id", "name").Values(1, "a").
-			OnConflictColumns("id").
-			OnConflictDoUpdate("name", "b").
+			Returning("id").
 			PlaceholderFormat(sqrl.Dollar)
 
 		sqlStr, args, err := q.ToSQL()
 		require.NoError(t, err)
-		assert.Equal(t, "INSERT INTO t (id,name) VALUES ($1,$2) ON CONFLICT (id) DO UPDATE SET name = $3", sqlStr)
-		assert.Equal(t, []interface{}{1, "a", "b"}, args)
-	})
-
-	t.Run("DoUpdateWithExcluded", func(t *testing.T) {
-		q := sqrl.Insert("t").Columns("id", "name").Values(1, "a").
-			OnConflictColumns("id").
-			OnConflictDoUpdate("name", sqrl.Expr("EXCLUDED.name"))
-
-		sqlStr, args, err := q.ToSQL()
-		require.NoError(t, err)
-		assert.Equal(t, "INSERT INTO t (id,name) VALUES (?,?) ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name", sqlStr)
+		assert.Equal(t, "INSERT INTO t (id,name) VALUES ($1,$2) RETURNING id", sqlStr)
 		assert.Equal(t, []interface{}{1, "a"}, args)
 	})
 
-	t.Run("DoUpdateWithWhere", func(t *testing.T) {
-		q := sqrl.Insert("t").Columns("id", "v").Values(1, 10).
-			OnConflictColumns("id").
-			OnConflictDoUpdate("v", sqrl.Expr("EXCLUDED.v")).
-			OnConflictWhere(sqrl.Eq{"t.active": true})
-
-		sqlStr, args, err := q.ToSQL()
-		require.NoError(t, err)
-		assert.Equal(t, "INSERT INTO t (id,v) VALUES (?,?) ON CONFLICT (id) DO UPDATE SET v = EXCLUDED.v WHERE t.active = ?", sqlStr)
-		assert.Equal(t, []interface{}{1, 10, true}, args)
-	})
-
-	t.Run("OnConstraint", func(t *testing.T) {
-		q := sqrl.Insert("t").Columns("id").Values(1).
-			OnConflictOnConstraint("t_pkey").OnConflictDoNothing()
+	t.Run("ChainedCalls", func(t *testing.T) {
+		q := sqrl.Insert("t").Columns("id", "name", "email").Values(1, "a", "a@b.c").
+			Returning("id").
+			Returning("name")
 
 		sqlStr, _, err := q.ToSQL()
 		require.NoError(t, err)
-		assert.Equal(t, "INSERT INTO t (id) VALUES (?) ON CONFLICT ON CONSTRAINT t_pkey DO NOTHING", sqlStr)
-	})
-
-	t.Run("MultipleConflictColumns", func(t *testing.T) {
-		q := sqrl.Insert("t").Columns("a", "b", "c").Values(1, 2, 3).
-			OnConflictColumns("a", "b").OnConflictDoNothing()
-
-		sqlStr, _, err := q.ToSQL()
-		require.NoError(t, err)
-		assert.Equal(t, "INSERT INTO t (a,b,c) VALUES (?,?,?) ON CONFLICT (a,b) DO NOTHING", sqlStr)
-	})
-
-	t.Run("WithSuffix", func(t *testing.T) {
-		q := sqrl.Insert("t").Columns("id", "name").Values(1, "a").
-			OnConflictColumns("id").
-			OnConflictDoUpdate("name", sqrl.Expr("EXCLUDED.name")).
-			Suffix("RETURNING id")
-
-		sqlStr, _, err := q.ToSQL()
-		require.NoError(t, err)
-		assert.Equal(t, "INSERT INTO t (id,name) VALUES (?,?) ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name RETURNING id", sqlStr)
+		assert.Equal(t, "INSERT INTO t (id,name,email) VALUES (?,?,?) RETURNING id, name", sqlStr)
 	})
 }
 

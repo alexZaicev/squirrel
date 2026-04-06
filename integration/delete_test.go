@@ -367,3 +367,237 @@ func TestDeleteErrors(t *testing.T) {
 		assert.Equal(t, sqrl.ErrRunnerNotSet, err)
 	})
 }
+
+// ---------------------------------------------------------------------------
+// RETURNING (first-class)
+// ---------------------------------------------------------------------------
+
+func TestDeleteReturningSingleColumn(t *testing.T) {
+	if isMySQL() {
+		t.Skip("RETURNING not supported on MySQL")
+	}
+
+	// Arrange
+	createTable(t, "sq_del_ret1", "(id INTEGER, name TEXT)")
+	seedTable(t, "INSERT INTO sq_del_ret1 VALUES (1, 'gone')")
+
+	// Act
+	rows, err := sb.Delete("sq_del_ret1").
+		Where(sqrl.Eq{"id": 1}).
+		Returning("name").
+		Query()
+
+	// Assert
+	require.NoError(t, err)
+	defer rows.Close()
+
+	require.True(t, rows.Next())
+	var name string
+	require.NoError(t, rows.Scan(&name))
+	assert.Equal(t, "gone", name)
+	assert.False(t, rows.Next())
+
+	// Verify row is actually deleted
+	var count int
+	err = db.QueryRow("SELECT COUNT(*) FROM sq_del_ret1").Scan(&count)
+	require.NoError(t, err)
+	assert.Equal(t, 0, count)
+}
+
+func TestDeleteReturningMultipleColumns(t *testing.T) {
+	if isMySQL() {
+		t.Skip("RETURNING not supported on MySQL")
+	}
+
+	// Arrange
+	createTable(t, "sq_del_ret2", "(id INTEGER, name TEXT)")
+	seedTable(t, "INSERT INTO sq_del_ret2 VALUES (1, 'deleted')")
+
+	// Act
+	rows, err := sb.Delete("sq_del_ret2").
+		Where(sqrl.Eq{"id": 1}).
+		Returning("id", "name").
+		Query()
+
+	// Assert
+	require.NoError(t, err)
+	defer rows.Close()
+
+	require.True(t, rows.Next())
+	var id int
+	var name string
+	require.NoError(t, rows.Scan(&id, &name))
+	assert.Equal(t, 1, id)
+	assert.Equal(t, "deleted", name)
+	assert.False(t, rows.Next())
+}
+
+func TestDeleteReturningStar(t *testing.T) {
+	if isMySQL() {
+		t.Skip("RETURNING not supported on MySQL")
+	}
+
+	// Arrange
+	createTable(t, "sq_del_retstar", "(id INTEGER, name TEXT)")
+	seedTable(t, "INSERT INTO sq_del_retstar VALUES (1, 'star_del')")
+
+	// Act
+	rows, err := sb.Delete("sq_del_retstar").
+		Where(sqrl.Eq{"id": 1}).
+		Returning("*").
+		Query()
+
+	// Assert
+	require.NoError(t, err)
+	defer rows.Close()
+
+	require.True(t, rows.Next())
+	var id int
+	var name string
+	require.NoError(t, rows.Scan(&id, &name))
+	assert.Equal(t, 1, id)
+	assert.Equal(t, "star_del", name)
+	assert.False(t, rows.Next())
+}
+
+func TestDeleteReturningWithQuery(t *testing.T) {
+	if isMySQL() {
+		t.Skip("RETURNING not supported on MySQL")
+	}
+
+	// Arrange
+	createTable(t, "sq_del_retscan", "(id INTEGER, name TEXT)")
+	seedTable(t, "INSERT INTO sq_del_retscan VALUES (1, 'scanned_del')")
+
+	// Act
+	rows, err := sb.Delete("sq_del_retscan").
+		Where(sqrl.Eq{"id": 1}).
+		Returning("name").
+		Query()
+
+	// Assert
+	require.NoError(t, err)
+	defer rows.Close()
+
+	require.True(t, rows.Next())
+	var name string
+	require.NoError(t, rows.Scan(&name))
+	assert.Equal(t, "scanned_del", name)
+	assert.False(t, rows.Next())
+}
+
+func TestDeleteReturningMultipleRows(t *testing.T) {
+	if isMySQL() {
+		t.Skip("RETURNING not supported on MySQL")
+	}
+
+	// Arrange
+	createTable(t, "sq_del_retmulti", "(id INTEGER, name TEXT)")
+	seedTable(t, "INSERT INTO sq_del_retmulti VALUES (1, 'a'), (2, 'b'), (3, 'c')")
+
+	// Act — delete all rows
+	rows, err := sb.Delete("sq_del_retmulti").
+		Returning("id", "name").
+		Query()
+
+	// Assert
+	require.NoError(t, err)
+	defer rows.Close()
+
+	type row struct {
+		id   int
+		name string
+	}
+	var results []row
+	for rows.Next() {
+		var r row
+		require.NoError(t, rows.Scan(&r.id, &r.name))
+		results = append(results, r)
+	}
+	require.NoError(t, rows.Err())
+	assert.Len(t, results, 3)
+
+	// Verify table is empty
+	var count int
+	err = db.QueryRow("SELECT COUNT(*) FROM sq_del_retmulti").Scan(&count)
+	require.NoError(t, err)
+	assert.Equal(t, 0, count)
+}
+
+func TestDeleteReturningWithSuffix(t *testing.T) {
+	if isMySQL() {
+		t.Skip("RETURNING not supported on MySQL")
+	}
+
+	// Arrange
+	createTable(t, "sq_del_retsfx", "(id INTEGER, name TEXT)")
+	seedTable(t, "INSERT INTO sq_del_retsfx VALUES (1, 'suffixed_del')")
+
+	// Act — RETURNING appears before suffix
+	rows, err := sb.Delete("sq_del_retsfx").
+		Where(sqrl.Eq{"id": 1}).
+		Returning("name").
+		Suffix("/* post-returning */").
+		Query()
+
+	// Assert
+	require.NoError(t, err)
+	defer rows.Close()
+
+	require.True(t, rows.Next())
+	var name string
+	require.NoError(t, rows.Scan(&name))
+	assert.Equal(t, "suffixed_del", name)
+}
+
+func TestDeleteReturningToSQL(t *testing.T) {
+	t.Run("SingleColumn", func(t *testing.T) {
+		q := sqrl.Delete("t").Where(sqrl.Eq{"id": 1}).
+			Returning("id")
+
+		sqlStr, args, err := q.ToSQL()
+		require.NoError(t, err)
+		assert.Equal(t, "DELETE FROM t WHERE id = ? RETURNING id", sqlStr)
+		assert.Equal(t, []interface{}{1}, args)
+	})
+
+	t.Run("MultipleColumns", func(t *testing.T) {
+		q := sqrl.Delete("t").Where(sqrl.Eq{"id": 1}).
+			Returning("id", "name")
+
+		sqlStr, args, err := q.ToSQL()
+		require.NoError(t, err)
+		assert.Equal(t, "DELETE FROM t WHERE id = ? RETURNING id, name", sqlStr)
+		assert.Equal(t, []interface{}{1}, args)
+	})
+
+	t.Run("Star", func(t *testing.T) {
+		q := sqrl.Delete("t").
+			Returning("*")
+
+		sqlStr, _, err := q.ToSQL()
+		require.NoError(t, err)
+		assert.Equal(t, "DELETE FROM t RETURNING *", sqlStr)
+	})
+
+	t.Run("WithDollarPlaceholders", func(t *testing.T) {
+		q := sqrl.Delete("t").Where(sqrl.Eq{"id": 1}).
+			Returning("id").
+			PlaceholderFormat(sqrl.Dollar)
+
+		sqlStr, args, err := q.ToSQL()
+		require.NoError(t, err)
+		assert.Equal(t, "DELETE FROM t WHERE id = $1 RETURNING id", sqlStr)
+		assert.Equal(t, []interface{}{1}, args)
+	})
+
+	t.Run("ChainedCalls", func(t *testing.T) {
+		q := sqrl.Delete("t").
+			Returning("id").
+			Returning("name")
+
+		sqlStr, _, err := q.ToSQL()
+		require.NoError(t, err)
+		assert.Equal(t, "DELETE FROM t RETURNING id, name", sqlStr)
+	})
+}

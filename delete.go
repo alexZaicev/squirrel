@@ -18,6 +18,7 @@ type deleteData struct {
 	OrderBys          []string
 	Limit             string
 	Offset            string
+	Returning         []string
 	Suffixes          []Sqlizer
 }
 
@@ -69,6 +70,11 @@ func (d *deleteData) ToSQL() (sqlStr string, args []any, err error) {
 	if len(d.Offset) > 0 {
 		sql.WriteString(" OFFSET ")
 		sql.WriteString(d.Offset)
+	}
+
+	if len(d.Returning) > 0 {
+		sql.WriteString(" RETURNING ")
+		sql.WriteString(strings.Join(d.Returning, ", "))
 	}
 
 	if len(d.Suffixes) > 0 {
@@ -176,6 +182,17 @@ func (b DeleteBuilder) Suffix(sql string, args ...any) DeleteBuilder {
 // SuffixExpr adds an expression to the end of the query
 func (b DeleteBuilder) SuffixExpr(expr Sqlizer) DeleteBuilder {
 	return builder.Append(b, "Suffixes", expr).(DeleteBuilder)
+}
+
+// Returning adds RETURNING expressions to the query.
+//
+// Ex:
+//
+//	Delete("users").Where("id = ?", 1).
+//		Returning("id", "name")
+//	// DELETE FROM users WHERE id = ? RETURNING id, name
+func (b DeleteBuilder) Returning(columns ...string) DeleteBuilder {
+	return builder.Extend(b, "Returning", columns).(DeleteBuilder)
 }
 
 func (b DeleteBuilder) Query() (*sql.Rows, error) {

@@ -21,6 +21,7 @@ type updateData struct {
 	OrderBys          []string
 	Limit             string
 	Offset            string
+	Returning         []string
 	Suffixes          []Sqlizer
 }
 
@@ -130,6 +131,11 @@ func (d *updateData) ToSQL() (sqlStr string, args []any, err error) {
 	if len(d.Offset) > 0 {
 		sql.WriteString(" OFFSET ")
 		sql.WriteString(d.Offset)
+	}
+
+	if len(d.Returning) > 0 {
+		sql.WriteString(" RETURNING ")
+		sql.WriteString(strings.Join(d.Returning, ", "))
 	}
 
 	if len(d.Suffixes) > 0 {
@@ -285,4 +291,15 @@ func (b UpdateBuilder) Suffix(sql string, args ...any) UpdateBuilder {
 // SuffixExpr adds an expression to the end of the query
 func (b UpdateBuilder) SuffixExpr(expr Sqlizer) UpdateBuilder {
 	return builder.Append(b, "Suffixes", expr).(UpdateBuilder)
+}
+
+// Returning adds RETURNING expressions to the query.
+//
+// Ex:
+//
+//	Update("users").Set("name", "John").Where("id = ?", 1).
+//		Returning("id", "name")
+//	// UPDATE users SET name = ? WHERE id = ? RETURNING id, name
+func (b UpdateBuilder) Returning(columns ...string) UpdateBuilder {
+	return builder.Extend(b, "Returning", columns).(UpdateBuilder)
 }
