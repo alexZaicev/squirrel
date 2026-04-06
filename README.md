@@ -668,6 +668,113 @@ fmt.Println(sq.DebugSqlizer(
 // SELECT * FROM users WHERE name = 'moe'
 ```
 
+### Safe Identifiers — Preventing SQL Injection in Table & Column Names
+
+Methods like `From()`, `Into()`, `Table()`, `Columns()`, `Set()`, `Join()`,
+`OrderBy()`, and `GroupBy()` interpolate strings directly into SQL **without
+sanitization**. If any of these strings come from user input (e.g., a dynamic
+sort column from an API query parameter), your application is vulnerable to SQL
+injection.
+
+Squirrel provides the `Ident` type and two helper functions to safely handle
+dynamic identifiers:
+
+**`QuoteIdent`** — ANSI SQL double-quote escaping (maximum flexibility):
+
+```go
+// Safely quote any user-supplied identifier — even malicious input.
+table, err := sq.QuoteIdent(userInput) // e.g. "users" → `"users"`
+if err != nil { /* handle error */ }
+
+sql, args, err := sq.Select("*").SafeFrom(table).ToSQL()
+// SELECT * FROM "users"
+
+// Injection attempt is safely neutralized:
+table, _ := sq.QuoteIdent("users; DROP TABLE users; --")
+sq.Select("*").SafeFrom(table).ToSQL()
+// SELECT * FROM "users; DROP TABLE users; --"   ← treated as a single identifier
+```
+
+**`ValidateIdent`** — strict pattern validation (maximum strictness):
+
+```go
+// Only allows letters, digits, underscores, and dots.
+// Rejects anything that doesn't look like a simple identifier.
+col, err := sq.ValidateIdent(userSortColumn)
+if err != nil {
+    // Reject the request — input contains invalid characters.
+    return err
+}
+
+sql, args, err := sq.Select("*").From("users").SafeOrderByDir(col, sq.Desc).ToSQL()
+// SELECT * FROM users ORDER BY user_name DESC
+```
+
+**Safe builder methods** accept `Ident` values instead of raw strings:
+
+```go
+// SELECT
+table, _ := sq.QuoteIdent("users")
+cols, _ := sq.QuoteIdents("id", "name", "email")
+orderCol, _ := sq.QuoteIdent("name")
+groupCol, _ := sq.QuoteIdent("department")
+
+sq.Select().SafeColumns(cols...).SafeFrom(table).
+    SafeGroupBy(groupCol).
+    SafeOrderByDir(orderCol, sq.Desc).
+    ToSQL()
+// SELECT "id", "name", "email" FROM "users" GROUP BY "department" ORDER BY "name" DESC
+
+// INSERT
+table, _ := sq.QuoteIdent("users")
+cols, _ := sq.QuoteIdents("id", "name")
+sq.Insert("").SafeInto(table).SafeColumns(cols...).Values(1, "moe").ToSQL()
+// INSERT INTO "users" ("id","name") VALUES (?,?)
+
+// UPDATE
+table, _ := sq.QuoteIdent("users")
+col, _ := sq.QuoteIdent("name")
+sq.Update("").SafeTable(table).SafeSet(col, "moe").Where("id = ?", 1).ToSQL()
+// UPDATE "users" SET "name" = ? WHERE id = ?
+
+// DELETE
+table, _ := sq.QuoteIdent("users")
+sq.Delete("").SafeFrom(table).Where("id = ?", 1).ToSQL()
+// DELETE FROM "users" WHERE id = ?
+```
+
+**Batch helpers** quote or validate multiple identifiers at once:
+
+```go
+ids, err := sq.QuoteIdents("id", "name", "email")   // quote all
+ids, err := sq.ValidateIdents("id", "name", "email") // validate all
+```
+
+**Panic variants** for use with known-safe literals in application code:
+
+```go
+table := sq.MustQuoteIdent("users")       // panics on error
+col := sq.MustValidateIdent("created_at") // panics on error
+```
+
+The `Ident` type also implements `Sqlizer`, so it can be used anywhere a
+`Sqlizer` is accepted.
+
+**Summary of Safe methods:**
+
+| Builder | Safe Method | Replaces |
+|---------|-------------|----------|
+| `SelectBuilder` | `SafeFrom(Ident)` | `From(string)` |
+| `SelectBuilder` | `SafeColumns(...Ident)` | `Columns(...string)` |
+| `SelectBuilder` | `SafeGroupBy(...Ident)` | `GroupBy(...string)` |
+| `SelectBuilder` | `SafeOrderBy(...Ident)` | `OrderBy(...string)` |
+| `SelectBuilder` | `SafeOrderByDir(Ident, OrderDir)` | `OrderBy("col DESC")` |
+| `InsertBuilder` | `SafeInto(Ident)` | `Into(string)` |
+| `InsertBuilder` | `SafeColumns(...Ident)` | `Columns(...string)` |
+| `UpdateBuilder` | `SafeTable(Ident)` | `Table(string)` |
+| `UpdateBuilder` | `SafeSet(Ident, any)` | `Set(string, any)` |
+| `DeleteBuilder` | `SafeFrom(Ident)` | `From(string)` |
+
 ## License
 
 Squirrel is released under the

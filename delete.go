@@ -163,6 +163,10 @@ func (b DeleteBuilder) PrefixExpr(expr Sqlizer) DeleteBuilder {
 }
 
 // From sets the table to be deleted from.
+//
+// WARNING: The table name is interpolated directly into the SQL string without
+// sanitization. NEVER pass unsanitized user input to this method.
+// For dynamic table names from user input, use SafeFrom instead.
 func (b DeleteBuilder) From(from string) DeleteBuilder {
 	return builder.Set(b, "From", from).(DeleteBuilder)
 }
@@ -175,6 +179,9 @@ func (b DeleteBuilder) Where(pred any, args ...any) DeleteBuilder {
 }
 
 // OrderBy adds ORDER BY expressions to the query.
+//
+// WARNING: Order-by expressions are interpolated directly into the SQL string.
+// NEVER pass unsanitized user input to this method.
 func (b DeleteBuilder) OrderBy(orderBys ...string) DeleteBuilder {
 	return builder.Extend(b, "OrderBys", orderBys).(DeleteBuilder)
 }
@@ -220,4 +227,20 @@ func (d *deleteData) Query() (*sql.Rows, error) {
 		return nil, ErrRunnerNotSet
 	}
 	return QueryWith(d.RunWith, d)
+}
+
+// Safe identifier methods
+//
+// The following methods accept Ident values produced by QuoteIdent or
+// ValidateIdent, guaranteeing that the identifiers are safe for interpolation
+// into SQL.
+
+// SafeFrom sets the table to be deleted from using a safe Ident.
+//
+// Ex:
+//
+//	id, _ := sq.QuoteIdent(userInput)
+//	sq.Delete("").SafeFrom(id).Where("id = ?", 1)
+func (b DeleteBuilder) SafeFrom(from Ident) DeleteBuilder {
+	return builder.Set(b, "From", from.String()).(DeleteBuilder)
 }

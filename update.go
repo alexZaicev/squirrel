@@ -238,11 +238,19 @@ func (b UpdateBuilder) PrefixExpr(expr Sqlizer) UpdateBuilder {
 }
 
 // Table sets the table to be updated.
+//
+// WARNING: The table name is interpolated directly into the SQL string without
+// sanitization. NEVER pass unsanitized user input to this method.
+// For dynamic table names from user input, use SafeTable instead.
 func (b UpdateBuilder) Table(table string) UpdateBuilder {
 	return builder.Set(b, "Table", table).(UpdateBuilder)
 }
 
 // Set adds SET clauses to the query.
+//
+// WARNING: The column name is interpolated directly into the SQL string without
+// sanitization. NEVER pass unsanitized user input as the column argument.
+// For dynamic column names from user input, use SafeSet instead.
 func (b UpdateBuilder) Set(column string, value any) UpdateBuilder {
 	return builder.Append(b, "SetClauses", setClause{column: column, value: value}).(UpdateBuilder)
 }
@@ -265,6 +273,9 @@ func (b UpdateBuilder) SetMap(clauses map[string]any) UpdateBuilder {
 
 // From adds FROM clause to the query
 // FROM is valid construct in postgresql only.
+//
+// WARNING: The table name is interpolated directly into the SQL string without
+// sanitization. NEVER pass unsanitized user input to this method.
 func (b UpdateBuilder) From(from string) UpdateBuilder {
 	return builder.Set(b, "From", newPart(from)).(UpdateBuilder)
 }
@@ -284,6 +295,9 @@ func (b UpdateBuilder) Where(pred any, args ...any) UpdateBuilder {
 }
 
 // OrderBy adds ORDER BY expressions to the query.
+//
+// WARNING: Order-by expressions are interpolated directly into the SQL string.
+// NEVER pass unsanitized user input to this method.
 func (b UpdateBuilder) OrderBy(orderBys ...string) UpdateBuilder {
 	return builder.Extend(b, "OrderBys", orderBys).(UpdateBuilder)
 }
@@ -317,4 +331,30 @@ func (b UpdateBuilder) SuffixExpr(expr Sqlizer) UpdateBuilder {
 //	// UPDATE users SET name = ? WHERE id = ? RETURNING id, name
 func (b UpdateBuilder) Returning(columns ...string) UpdateBuilder {
 	return builder.Extend(b, "Returning", columns).(UpdateBuilder)
+}
+
+// Safe identifier methods
+//
+// The following methods accept Ident values produced by QuoteIdent or
+// ValidateIdent, guaranteeing that the identifiers are safe for interpolation
+// into SQL.
+
+// SafeTable sets the table to be updated using a safe Ident.
+//
+// Ex:
+//
+//	id, _ := sq.QuoteIdent(userInput)
+//	sq.Update("").SafeTable(id).Set("name", "John").Where("id = ?", 1)
+func (b UpdateBuilder) SafeTable(table Ident) UpdateBuilder {
+	return builder.Set(b, "Table", table.String()).(UpdateBuilder)
+}
+
+// SafeSet adds a SET clause with a safe Ident column name.
+//
+// Ex:
+//
+//	col, _ := sq.QuoteIdent(userInput)
+//	sq.Update("users").SafeSet(col, "value").Where("id = ?", 1)
+func (b UpdateBuilder) SafeSet(column Ident, value any) UpdateBuilder {
+	return builder.Append(b, "SetClauses", setClause{column: column.String(), value: value}).(UpdateBuilder)
 }

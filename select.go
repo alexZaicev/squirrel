@@ -248,12 +248,19 @@ func (b SelectBuilder) Distinct() SelectBuilder {
 	return b.Options("DISTINCT")
 }
 
-// Options adds select option to the query
+// Options adds select option to the query.
+//
+// WARNING: Options are interpolated directly into the SQL string without
+// sanitization. NEVER pass unsanitized user input to this method.
 func (b SelectBuilder) Options(options ...string) SelectBuilder {
 	return builder.Extend(b, "Options", options).(SelectBuilder)
 }
 
 // Columns adds result columns to the query.
+//
+// WARNING: Column names are interpolated directly into the SQL string without
+// sanitization. NEVER pass unsanitized user input to this method.
+// For dynamic column names from user input, use SafeColumns instead.
 func (b SelectBuilder) Columns(columns ...string) SelectBuilder {
 	parts := make([]any, 0, len(columns))
 	for _, str := range columns {
@@ -279,6 +286,10 @@ func (b SelectBuilder) Column(column any, args ...any) SelectBuilder {
 }
 
 // From sets the FROM clause of the query.
+//
+// WARNING: The table name is interpolated directly into the SQL string without
+// sanitization. NEVER pass unsanitized user input to this method.
+// For dynamic table names from user input, use SafeFrom instead.
 func (b SelectBuilder) From(from string) SelectBuilder {
 	return builder.Set(b, "From", newPart(from)).(SelectBuilder)
 }
@@ -296,31 +307,49 @@ func (b SelectBuilder) JoinClause(pred any, args ...any) SelectBuilder {
 }
 
 // Join adds a JOIN clause to the query.
+//
+// WARNING: The join clause is interpolated directly into the SQL string.
+// NEVER pass unsanitized user input to this method.
 func (b SelectBuilder) Join(join string, rest ...any) SelectBuilder {
 	return b.JoinClause("JOIN "+join, rest...)
 }
 
 // LeftJoin adds a LEFT JOIN clause to the query.
+//
+// WARNING: The join clause is interpolated directly into the SQL string.
+// NEVER pass unsanitized user input to this method.
 func (b SelectBuilder) LeftJoin(join string, rest ...any) SelectBuilder {
 	return b.JoinClause("LEFT JOIN "+join, rest...)
 }
 
 // RightJoin adds a RIGHT JOIN clause to the query.
+//
+// WARNING: The join clause is interpolated directly into the SQL string.
+// NEVER pass unsanitized user input to this method.
 func (b SelectBuilder) RightJoin(join string, rest ...any) SelectBuilder {
 	return b.JoinClause("RIGHT JOIN "+join, rest...)
 }
 
 // InnerJoin adds a INNER JOIN clause to the query.
+//
+// WARNING: The join clause is interpolated directly into the SQL string.
+// NEVER pass unsanitized user input to this method.
 func (b SelectBuilder) InnerJoin(join string, rest ...any) SelectBuilder {
 	return b.JoinClause("INNER JOIN "+join, rest...)
 }
 
 // CrossJoin adds a CROSS JOIN clause to the query.
+//
+// WARNING: The join clause is interpolated directly into the SQL string.
+// NEVER pass unsanitized user input to this method.
 func (b SelectBuilder) CrossJoin(join string, rest ...any) SelectBuilder {
 	return b.JoinClause("CROSS JOIN "+join, rest...)
 }
 
 // FullJoin adds a FULL OUTER JOIN clause to the query.
+//
+// WARNING: The join clause is interpolated directly into the SQL string.
+// NEVER pass unsanitized user input to this method.
 func (b SelectBuilder) FullJoin(join string, rest ...any) SelectBuilder {
 	return b.JoinClause("FULL OUTER JOIN "+join, rest...)
 }
@@ -385,6 +414,10 @@ func (b SelectBuilder) Where(pred any, args ...any) SelectBuilder {
 }
 
 // GroupBy adds GROUP BY expressions to the query.
+//
+// WARNING: Group-by expressions are interpolated directly into the SQL string.
+// NEVER pass unsanitized user input to this method.
+// For dynamic group-by columns from user input, use SafeGroupBy instead.
 func (b SelectBuilder) GroupBy(groupBys ...string) SelectBuilder {
 	return builder.Extend(b, "GroupBys", groupBys).(SelectBuilder)
 }
@@ -402,6 +435,10 @@ func (b SelectBuilder) OrderByClause(pred any, args ...any) SelectBuilder {
 }
 
 // OrderBy adds ORDER BY expressions to the query.
+//
+// WARNING: Order-by expressions are interpolated directly into the SQL string.
+// NEVER pass unsanitized user input to this method.
+// For dynamic order-by columns from user input, use SafeOrderBy instead.
 func (b SelectBuilder) OrderBy(orderBys ...string) SelectBuilder {
 	for _, orderBy := range orderBys {
 		b = b.OrderByClause(orderBy)
@@ -438,4 +475,86 @@ func (b SelectBuilder) Suffix(sql string, args ...any) SelectBuilder {
 // SuffixExpr adds an expression to the end of the query
 func (b SelectBuilder) SuffixExpr(expr Sqlizer) SelectBuilder {
 	return builder.Append(b, "Suffixes", expr).(SelectBuilder)
+}
+
+// Safe identifier methods
+//
+// The following methods accept Ident values produced by QuoteIdent or
+// ValidateIdent, guaranteeing that the identifiers are safe for interpolation
+// into SQL. Use them when identifiers come from user input or any other
+// untrusted source.
+
+// SafeFrom sets the FROM clause of the query using a safe Ident.
+//
+// Ex:
+//
+//	id, _ := sq.QuoteIdent(userInput)
+//	sq.Select("*").SafeFrom(id)
+func (b SelectBuilder) SafeFrom(from Ident) SelectBuilder {
+	return builder.Set(b, "From", newPart(from.String())).(SelectBuilder)
+}
+
+// SafeColumns adds result columns to the query using safe Ident values.
+//
+// Ex:
+//
+//	cols, _ := sq.QuoteIdents("id", "name")
+//	sq.Select().SafeColumns(cols...)
+func (b SelectBuilder) SafeColumns(columns ...Ident) SelectBuilder {
+	parts := make([]any, 0, len(columns))
+	for _, id := range columns {
+		parts = append(parts, newPart(id.String()))
+	}
+	return builder.Extend(b, "Columns", parts).(SelectBuilder)
+}
+
+// SafeGroupBy adds GROUP BY expressions using safe Ident values.
+//
+// Ex:
+//
+//	id, _ := sq.QuoteIdent(userInput)
+//	sq.Select("count(*)").SafeFrom(tableId).SafeGroupBy(id)
+func (b SelectBuilder) SafeGroupBy(groupBys ...Ident) SelectBuilder {
+	return builder.Extend(b, "GroupBys", identsToStrings(groupBys)).(SelectBuilder)
+}
+
+// SafeOrderBy adds ORDER BY expressions using safe Ident values. Each Ident
+// is used as a column name; to specify direction, use SafeOrderByDir.
+//
+// Ex:
+//
+//	id, _ := sq.QuoteIdent("name")
+//	sq.Select("*").From("users").SafeOrderBy(id)
+func (b SelectBuilder) SafeOrderBy(orderBys ...Ident) SelectBuilder {
+	for _, id := range orderBys {
+		b = b.OrderByClause(id.String())
+	}
+	return b
+}
+
+// OrderDir represents an ORDER BY sort direction.
+type OrderDir string
+
+const (
+	// Asc sorts in ascending order.
+	Asc OrderDir = "ASC"
+	// Desc sorts in descending order.
+	Desc OrderDir = "DESC"
+)
+
+// SafeOrderByDir adds a single ORDER BY expression with a safe Ident column
+// and an explicit sort direction.
+//
+// Ex:
+//
+//	col, _ := sq.QuoteIdent(userSortColumn)
+//	sq.Select("*").From("users").SafeOrderByDir(col, sq.Desc)
+func (b SelectBuilder) SafeOrderByDir(column Ident, dir OrderDir) SelectBuilder {
+	switch dir {
+	case Asc, Desc:
+		return b.OrderByClause(column.String() + " " + string(dir))
+	default:
+		// Default to no direction (database default, typically ASC).
+		return b.OrderByClause(column.String())
+	}
 }

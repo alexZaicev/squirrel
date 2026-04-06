@@ -383,16 +383,27 @@ func (b InsertBuilder) PrefixExpr(expr Sqlizer) InsertBuilder {
 }
 
 // Options adds keyword options before the INTO clause of the query.
+//
+// WARNING: Options are interpolated directly into the SQL string without
+// sanitization. NEVER pass unsanitized user input to this method.
 func (b InsertBuilder) Options(options ...string) InsertBuilder {
 	return builder.Extend(b, "Options", options).(InsertBuilder)
 }
 
 // Into sets the INTO clause of the query.
+//
+// WARNING: The table name is interpolated directly into the SQL string without
+// sanitization. NEVER pass unsanitized user input to this method.
+// For dynamic table names from user input, use SafeInto instead.
 func (b InsertBuilder) Into(into string) InsertBuilder {
 	return builder.Set(b, "Into", into).(InsertBuilder)
 }
 
 // Columns adds insert columns to the query.
+//
+// WARNING: Column names are interpolated directly into the SQL string without
+// sanitization. NEVER pass unsanitized user input to this method.
+// For dynamic column names from user input, use SafeColumns instead.
 func (b InsertBuilder) Columns(columns ...string) InsertBuilder {
 	return builder.Extend(b, "Columns", columns).(InsertBuilder)
 }
@@ -555,4 +566,30 @@ func (b InsertBuilder) OnDuplicateKeyUpdateMap(clauses map[string]any) InsertBui
 		b = b.OnDuplicateKeyUpdate(key, clauses[key])
 	}
 	return b
+}
+
+// Safe identifier methods
+//
+// The following methods accept Ident values produced by QuoteIdent or
+// ValidateIdent, guaranteeing that the identifiers are safe for interpolation
+// into SQL.
+
+// SafeInto sets the INTO clause of the query using a safe Ident.
+//
+// Ex:
+//
+//	id, _ := sq.QuoteIdent(userInput)
+//	sq.Insert("").SafeInto(id).Columns("name").Values("John")
+func (b InsertBuilder) SafeInto(into Ident) InsertBuilder {
+	return builder.Set(b, "Into", into.String()).(InsertBuilder)
+}
+
+// SafeColumns adds insert columns to the query using safe Ident values.
+//
+// Ex:
+//
+//	cols, _ := sq.QuoteIdents("id", "name")
+//	sq.Insert("users").SafeColumns(cols...).Values(1, "John")
+func (b InsertBuilder) SafeColumns(columns ...Ident) InsertBuilder {
+	return builder.Extend(b, "Columns", identsToStrings(columns)).(InsertBuilder)
 }

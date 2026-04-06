@@ -164,41 +164,64 @@ Expr("EXISTS (?)", subQuery)
 
 ## 2. Critical Security Issues
 
-### 2.1 🔴 CRITICAL — SQL Injection via Unparameterized Table & Column Names
+### 2.1 ✅ MITIGATED — SQL Injection via Unparameterized Table & Column Names — **DONE**
 
-**This is the most serious issue in the library.** Multiple builder methods directly interpolate user-supplied strings into SQL without any sanitization or parameterization:
+~~**This is the most serious issue in the library.** Multiple builder methods directly interpolate user-supplied strings into SQL without any sanitization or parameterization.~~
 
-| Method | File | What gets interpolated |
-|--------|------|----------------------|
-| `From(from string)` | `select.go:281` | Table name goes straight into SQL |
-| `Into(into string)` | `insert.go:246` | Table name goes straight into SQL |
-| `Table(table string)` | `update.go:221` | Table name goes straight into SQL |
-| `Delete(from string)` / `From(from string)` | `delete.go:146` | Table name goes straight into SQL |
-| `Join(join string, ...)` | `select.go:298` | Join clause goes straight into SQL |
-| `Columns(columns ...string)` | `select.go:257`, `insert.go:250` | Column names go straight into SQL |
-| `Set(column string, ...)` | `update.go:225` | Column name in SET clause is unescaped |
-| `GroupBy(groupBys ...string)` | `select.go:350` | GROUP BY expressions go straight into SQL |
-| `OrderBy(orderBys ...string)` | `select.go:367`, `update.go:266`, `delete.go:157` | ORDER BY expressions go straight into SQL |
-| `Options(options ...string)` | `select.go:252`, `insert.go:240` | Raw SQL keywords injected |
+**Mitigated** (April 2026) via a three-pronged approach that preserves full backward compatibility while giving users the tools to safely handle dynamic identifiers:
 
-**Example attack vector:**
+1. **Prominent WARNING documentation** added to all affected methods (`From()`, `Into()`, `Table()`, `Columns()`, `Set()`, `Join()`, `LeftJoin()`, `RightJoin()`, `InnerJoin()`, `CrossJoin()`, `FullJoin()`, `GroupBy()`, `OrderBy()`, `Options()`) explicitly stating that unsanitized user input must NEVER be passed to them and pointing to safe alternatives.
+
+2. **Identifier quoting/validation helpers** in `ident.go`:
+   - `QuoteIdent(name string) (Ident, error)` — ANSI SQL double-quote escaping. Wraps any string safely (even malicious ones like `users; DROP TABLE users; --` → `"users; DROP TABLE users; --"`). Handles schema-qualified names (`"public"."users"`).
+   - `ValidateIdent(name string) (Ident, error)` — Strict regex validation against `^[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)*$`. Rejects anything with spaces, semicolons, quotes, etc. Returns unquoted identifier.
+   - `MustQuoteIdent` / `MustValidateIdent` — Panic variants for known-safe literals.
+   - `QuoteIdents` / `ValidateIdents` — Batch variants.
+   - `ErrInvalidIdentifier` — Sentinel error for `errors.Is()` checking.
+   - `Ident` type implements `Sqlizer`, so it can be used anywhere a `Sqlizer` is accepted.
+
+3. **Safe builder methods** that accept `Ident` values instead of raw strings:
+   - **SelectBuilder:** `SafeFrom(Ident)`, `SafeColumns(...Ident)`, `SafeGroupBy(...Ident)`, `SafeOrderBy(...Ident)`, `SafeOrderByDir(Ident, OrderDir)`
+   - **InsertBuilder:** `SafeInto(Ident)`, `SafeColumns(...Ident)`
+   - **UpdateBuilder:** `SafeTable(Ident)`, `SafeSet(Ident, any)`
+   - **DeleteBuilder:** `SafeFrom(Ident)`
+   - `OrderDir` type with `Asc` / `Desc` constants for type-safe sort direction.
+
+**Design rationale:** The existing API was **not broken** — all original methods retain their exact signatures and behavior. The `Ident` type is an opaque struct (not a type alias) that can only be created via `QuoteIdent` or `ValidateIdent`, preventing accidental unsafe usage. Two strategies are provided: `QuoteIdent` for maximum flexibility (wraps any string safely) and `ValidateIdent` for strictness (rejects anything that doesn't look like an identifier).
+
+**Files added:** `ident.go`, `ident_test.go`, `integration/ident_test.go`.
+**Files modified:** `select.go`, `insert.go`, `update.go`, `delete.go` (WARNING docs + Safe* methods).
+
+**Example — before (unsafe):**
 ```go
 userInput := "users; DROP TABLE users; --"
-sq.Select("*").From(userInput).ToSql()
-// Produces: SELECT * FROM users; DROP TABLE users; --
+sq.Select("*").From(userInput).ToSQL()
+// Produces: SELECT * FROM users; DROP TABLE users; --  ← SQL INJECTION
 ```
 
-If _any_ of these string arguments come from user input (e.g., a dynamic sort column from an API query parameter), the application is vulnerable to SQL injection. The library should:
+**Example — after (safe):**
+```go
+userInput := "users; DROP TABLE users; --"
+table, err := sq.QuoteIdent(userInput)  // safely quotes
+if err != nil { /* handle */ }
+sq.Select("*").SafeFrom(table).ToSQL()
+// Produces: SELECT * FROM "users; DROP TABLE users; --"  ← SAFE (treated as identifier)
+```
 
-1. **Document** prominently that these methods must NEVER receive unsanitized user input.
-2. Provide **identifier quoting** helpers (e.g., `QuoteIdentifier(name string, dialect Dialect) string`) that users can wrap around dynamic identifiers.
-3. Consider adding methods that accept identifiers as validated/quoted types rather than raw strings.
+**Example — strict validation:**
+```go
+col, err := sq.ValidateIdent(userSortColumn)
+if err != nil { /* reject — contains invalid characters */ }
+sq.Select("*").From("users").SafeOrderByDir(col, sq.Desc)
+```
 
-> **GitHub [#328](https://github.com/Masterminds/squirrel/issues/328)** — "OrderBy column name placeholder" (opened 2022-08-06). User asks exactly this: "is there a way in squirrel to safely build an ORDER BY clause with column name coming from user input?" — currently there is not.
+Full unit test coverage (46 tests in `ident_test.go`) including all Safe* methods, injection attempt handling, edge cases, combined queries, and placeholder format compatibility. Integration tests (17 tests in `integration/ident_test.go`) against SQLite covering SafeFrom, SafeColumns, SafeOrderByDir, SafeGroupBy, SafeInto, SafeTable, SafeSet, SafeFrom (delete), and combined queries.
+
+> **GitHub [#328](https://github.com/Masterminds/squirrel/issues/328)** — "OrderBy column name placeholder" (opened 2022-08-06). User asks exactly this: "is there a way in squirrel to safely build an ORDER BY clause with column name coming from user input?" — **now solved** via `SafeOrderBy` / `SafeOrderByDir` with `QuoteIdent` / `ValidateIdent`.
 >
-> **GitHub [#294](https://github.com/Masterminds/squirrel/issues/294)** — "How to set dynamic parameters for the From field" (opened 2021-08-29). User resorts to `fmt.Sprintf` in `From()`, creating an injection vector.
+> **GitHub [#294](https://github.com/Masterminds/squirrel/issues/294)** — "How to set dynamic parameters for the From field" (opened 2021-08-29). User resorts to `fmt.Sprintf` in `From()`, creating an injection vector. — **now solved** via `SafeFrom` with `QuoteIdent`.
 >
-> **GitHub [#387](https://github.com/Masterminds/squirrel/issues/387)** — "Add link to safe-squirrel" (opened 2025-02-16). A community fork ([bored-engineer/safe-squirrel](https://github.com/bored-engineer/safe-squirrel)) that enforces safe usage via Go's type system to prevent SQL injection. Its existence validates this as a real-world problem.
+> **GitHub [#387](https://github.com/Masterminds/squirrel/issues/387)** — "Add link to safe-squirrel" (opened 2025-02-16). A community fork ([bored-engineer/safe-squirrel](https://github.com/bored-engineer/safe-squirrel)) that enforces safe usage via Go's type system to prevent SQL injection. — **now addressed** natively via the `Ident` type system.
 
 ### 2.2 🔴 CRITICAL — `DebugSqlizer` Output Can Be Mistaken for Executable SQL
 
@@ -368,7 +391,7 @@ Building an insert incrementally — adding a column+value pair after the initia
 
 | Priority | Issue | GitHub | Type |
 |----------|-------|--------|------|
-| 🔴 Critical | SQL injection via unquoted identifiers in `From`/`Table`/`Into`/`Columns`/`Set`/`Join`/`OrderBy`/`GroupBy` | [#328](https://github.com/Masterminds/squirrel/issues/328), [#294](https://github.com/Masterminds/squirrel/issues/294), [#387](https://github.com/Masterminds/squirrel/issues/387) | Security |
+| ✅ Mitigated | SQL injection via unquoted identifiers in `From`/`Table`/`Into`/`Columns`/`Set`/`Join`/`OrderBy`/`GroupBy` — Safe* methods + `QuoteIdent`/`ValidateIdent` added | [#328](https://github.com/Masterminds/squirrel/issues/328), [#294](https://github.com/Masterminds/squirrel/issues/294), [#387](https://github.com/Masterminds/squirrel/issues/387) | Security |
 | 🔴 Critical | `DebugSqlizer` doesn't escape quotes — output looks like valid SQL but is injectable | — | Security |
 | 🟡 High | `??` escape logic duplicated with dead code branches | [#322](https://github.com/Masterminds/squirrel/issues/322) | Security/Maintenance |
 | 🟡 High | `StmtCache` unbounded growth → memory leak / DoS | — | Security |
@@ -404,7 +427,7 @@ Building an insert incrementally — adding a column+value pair after the initia
 | ⭐ High | `RemoveOrderBy` / `GetOrderBy` | [#369](https://github.com/Masterminds/squirrel/issues/369) |
 | ⭐ High | `JoinSelect` — join against a subquery | [#241](https://github.com/Masterminds/squirrel/issues/241) |
 | ✅ Done | First-class `RETURNING` clause | [#348](https://github.com/Masterminds/squirrel/issues/348) |
-| ⭐ High | Identifier quoting helper | [#328](https://github.com/Masterminds/squirrel/issues/328) |
+| ✅ Done | Identifier quoting helper + Safe* builder methods | [#328](https://github.com/Masterminds/squirrel/issues/328) |
 | ✅ Done | `NOT` expression helper | — |
 | ✅ Done | `EXISTS` / `NOT EXISTS` expression helpers | — |
 | ✅ Done | `BETWEEN` expression | [#340](https://github.com/Masterminds/squirrel/issues/340) |
