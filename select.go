@@ -28,31 +28,31 @@ type selectData struct {
 
 func (d *selectData) Exec() (sql.Result, error) {
 	if d.RunWith == nil {
-		return nil, RunnerNotSet
+		return nil, ErrRunnerNotSet
 	}
 	return ExecWith(d.RunWith, d)
 }
 
 func (d *selectData) Query() (*sql.Rows, error) {
 	if d.RunWith == nil {
-		return nil, RunnerNotSet
+		return nil, ErrRunnerNotSet
 	}
 	return QueryWith(d.RunWith, d)
 }
 
 func (d *selectData) QueryRow() RowScanner {
 	if d.RunWith == nil {
-		return &Row{err: RunnerNotSet}
+		return &Row{err: ErrRunnerNotSet}
 	}
 	queryRower, ok := d.RunWith.(QueryRower)
 	if !ok {
-		return &Row{err: RunnerNotQueryRunner}
+		return &Row{err: ErrRunnerNotQueryRunner}
 	}
 	return QueryRowWith(queryRower, d)
 }
 
-func (d *selectData) ToSql() (sqlStr string, args []interface{}, err error) {
-	sqlStr, args, err = d.toSqlRaw()
+func (d *selectData) ToSQL() (sqlStr string, args []interface{}, err error) {
+	sqlStr, args, err = d.toSQLRaw()
 	if err != nil {
 		return
 	}
@@ -61,7 +61,7 @@ func (d *selectData) ToSql() (sqlStr string, args []interface{}, err error) {
 	return
 }
 
-func (d *selectData) toSqlRaw() (sqlStr string, args []interface{}, err error) {
+func (d *selectData) toSQLRaw() (sqlStr string, args []interface{}, err error) {
 	if len(d.Columns) == 0 {
 		err = fmt.Errorf("select statements must have at least one result column")
 		return
@@ -70,7 +70,7 @@ func (d *selectData) toSqlRaw() (sqlStr string, args []interface{}, err error) {
 	sql := &bytes.Buffer{}
 
 	if len(d.Prefixes) > 0 {
-		args, err = appendToSql(d.Prefixes, sql, " ", args)
+		args, err = appendToSQL(d.Prefixes, sql, " ", args)
 		if err != nil {
 			return
 		}
@@ -86,7 +86,7 @@ func (d *selectData) toSqlRaw() (sqlStr string, args []interface{}, err error) {
 	}
 
 	if len(d.Columns) > 0 {
-		args, err = appendToSql(d.Columns, sql, ", ", args)
+		args, err = appendToSQL(d.Columns, sql, ", ", args)
 		if err != nil {
 			return
 		}
@@ -94,7 +94,7 @@ func (d *selectData) toSqlRaw() (sqlStr string, args []interface{}, err error) {
 
 	if d.From != nil {
 		sql.WriteString(" FROM ")
-		args, err = appendToSql([]Sqlizer{d.From}, sql, "", args)
+		args, err = appendToSQL([]Sqlizer{d.From}, sql, "", args)
 		if err != nil {
 			return
 		}
@@ -102,7 +102,7 @@ func (d *selectData) toSqlRaw() (sqlStr string, args []interface{}, err error) {
 
 	if len(d.Joins) > 0 {
 		sql.WriteString(" ")
-		args, err = appendToSql(d.Joins, sql, " ", args)
+		args, err = appendToSQL(d.Joins, sql, " ", args)
 		if err != nil {
 			return
 		}
@@ -110,7 +110,7 @@ func (d *selectData) toSqlRaw() (sqlStr string, args []interface{}, err error) {
 
 	if len(d.WhereParts) > 0 {
 		sql.WriteString(" WHERE ")
-		args, err = appendToSql(d.WhereParts, sql, " AND ", args)
+		args, err = appendToSQL(d.WhereParts, sql, " AND ", args)
 		if err != nil {
 			return
 		}
@@ -123,7 +123,7 @@ func (d *selectData) toSqlRaw() (sqlStr string, args []interface{}, err error) {
 
 	if len(d.HavingParts) > 0 {
 		sql.WriteString(" HAVING ")
-		args, err = appendToSql(d.HavingParts, sql, " AND ", args)
+		args, err = appendToSQL(d.HavingParts, sql, " AND ", args)
 		if err != nil {
 			return
 		}
@@ -131,7 +131,7 @@ func (d *selectData) toSqlRaw() (sqlStr string, args []interface{}, err error) {
 
 	if len(d.OrderByParts) > 0 {
 		sql.WriteString(" ORDER BY ")
-		args, err = appendToSql(d.OrderByParts, sql, ", ", args)
+		args, err = appendToSQL(d.OrderByParts, sql, ", ", args)
 		if err != nil {
 			return
 		}
@@ -150,7 +150,7 @@ func (d *selectData) toSqlRaw() (sqlStr string, args []interface{}, err error) {
 	if len(d.Suffixes) > 0 {
 		sql.WriteString(" ")
 
-		args, err = appendToSql(d.Suffixes, sql, " ", args)
+		args, err = appendToSQL(d.Suffixes, sql, " ", args)
 		if err != nil {
 			return
 		}
@@ -212,21 +212,21 @@ func (b SelectBuilder) Scan(dest ...interface{}) error {
 
 // SQL methods
 
-// ToSql builds the query into a SQL string and bound args.
-func (b SelectBuilder) ToSql() (string, []interface{}, error) {
+// ToSQL builds the query into a SQL string and bound args.
+func (b SelectBuilder) ToSQL() (string, []interface{}, error) {
 	data := builder.GetStruct(b).(selectData)
-	return data.ToSql()
+	return data.ToSQL()
 }
 
-func (b SelectBuilder) toSqlRaw() (string, []interface{}, error) {
+func (b SelectBuilder) toSQLRaw() (string, []interface{}, error) {
 	data := builder.GetStruct(b).(selectData)
-	return data.toSqlRaw()
+	return data.toSQLRaw()
 }
 
-// MustSql builds the query into a SQL string and bound args.
+// MustSQL builds the query into a SQL string and bound args.
 // It panics if there are any errors.
-func (b SelectBuilder) MustSql() (string, []interface{}) {
-	sql, args, err := b.ToSql()
+func (b SelectBuilder) MustSQL() (string, []interface{}) {
+	sql, args, err := b.ToSQL()
 	if err != nil {
 		panic(err)
 	}

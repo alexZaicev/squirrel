@@ -1,5 +1,4 @@
 //go:build go1.8
-// +build go1.8
 
 package squirrel
 
@@ -9,8 +8,8 @@ import (
 	"errors"
 )
 
-// NoContextSupport is returned if a db doesn't support Context.
-var NoContextSupport = errors.New("DB does not support Context")
+// ErrNoContextSupport is returned if a db doesn't support Context.
+var ErrNoContextSupport = errors.New("DB does not support Context")
 
 // ExecerContext is the interface that wraps the ExecContext method.
 //
@@ -42,36 +41,36 @@ type RunnerContext interface {
 	ExecerContext
 }
 
-// WrapStdSqlCtx wraps a type implementing the standard SQL interface plus the context
+// WrapStdSQLCtx wraps a type implementing the standard SQL interface plus the context
 // versions of the methods with methods that squirrel expects.
-func WrapStdSqlCtx(stdSqlCtx StdSqlCtx) RunnerContext {
-	return &stdsqlCtxRunner{stdSqlCtx}
+func WrapStdSQLCtx(stdSQLCtx StdSQLCtx) RunnerContext {
+	return &stdsqlCtxRunner{stdSQLCtx}
 }
 
-// StdSqlCtx encompasses the standard methods of the *sql.DB type, along with the Context
+// StdSQLCtx encompasses the standard methods of the *sql.DB type, along with the Context
 // versions of those methods, and other types that wrap these methods.
-type StdSqlCtx interface {
-	StdSql
+type StdSQLCtx interface {
+	StdSQL
 	QueryContext(context.Context, string, ...interface{}) (*sql.Rows, error)
 	QueryRowContext(context.Context, string, ...interface{}) *sql.Row
 	ExecContext(context.Context, string, ...interface{}) (sql.Result, error)
 }
 
 type stdsqlCtxRunner struct {
-	StdSqlCtx
+	StdSQLCtx
 }
 
 func (r *stdsqlCtxRunner) QueryRow(query string, args ...interface{}) RowScanner {
-	return r.StdSqlCtx.QueryRow(query, args...)
+	return r.StdSQLCtx.QueryRow(query, args...)
 }
 
 func (r *stdsqlCtxRunner) QueryRowContext(ctx context.Context, query string, args ...interface{}) RowScanner {
-	return r.StdSqlCtx.QueryRowContext(ctx, query, args...)
+	return r.StdSQLCtx.QueryRowContext(ctx, query, args...)
 }
 
 // ExecContextWith ExecContexts the SQL returned by s with db.
 func ExecContextWith(ctx context.Context, db ExecerContext, s Sqlizer) (res sql.Result, err error) {
-	query, args, err := s.ToSql()
+	query, args, err := s.ToSQL()
 	if err != nil {
 		return
 	}
@@ -80,7 +79,7 @@ func ExecContextWith(ctx context.Context, db ExecerContext, s Sqlizer) (res sql.
 
 // QueryContextWith QueryContexts the SQL returned by s with db.
 func QueryContextWith(ctx context.Context, db QueryerContext, s Sqlizer) (rows *sql.Rows, err error) {
-	query, args, err := s.ToSql()
+	query, args, err := s.ToSQL()
 	if err != nil {
 		return
 	}
@@ -89,6 +88,6 @@ func QueryContextWith(ctx context.Context, db QueryerContext, s Sqlizer) (rows *
 
 // QueryRowContextWith QueryRowContexts the SQL returned by s with db.
 func QueryRowContextWith(ctx context.Context, db QueryRowerContext, s Sqlizer) RowScanner {
-	query, args, err := s.ToSql()
+	query, args, err := s.ToSQL()
 	return &Row{RowScanner: db.QueryRowContext(ctx, query, args...), err: err}
 }

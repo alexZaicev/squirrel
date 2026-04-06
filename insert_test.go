@@ -16,7 +16,7 @@ func TestInsertBuilderToSql(t *testing.T) {
 		Values(3, Expr("? + 1", 4)).
 		Suffix("RETURNING ?", 5)
 
-	sql, args, err := b.ToSql()
+	sql, args, err := b.ToSQL()
 	assert.NoError(t, err)
 
 	expectedSQL := "WITH prefix AS ? " +
@@ -29,10 +29,10 @@ func TestInsertBuilderToSql(t *testing.T) {
 }
 
 func TestInsertBuilderToSqlErr(t *testing.T) {
-	_, _, err := Insert("").Values(1).ToSql()
+	_, _, err := Insert("").Values(1).ToSQL()
 	assert.Error(t, err)
 
-	_, _, err = Insert("x").ToSql()
+	_, _, err = Insert("x").ToSQL()
 	assert.Error(t, err)
 }
 
@@ -42,16 +42,16 @@ func TestInsertBuilderMustSql(t *testing.T) {
 			t.Errorf("TestInsertBuilderMustSql should have panicked!")
 		}
 	}()
-	Insert("").MustSql()
+	Insert("").MustSQL()
 }
 
 func TestInsertBuilderPlaceholders(t *testing.T) {
 	b := Insert("test").Values(1, 2)
 
-	sql, _, _ := b.PlaceholderFormat(Question).ToSql()
+	sql, _, _ := b.PlaceholderFormat(Question).ToSQL()
 	assert.Equal(t, "INSERT INTO test VALUES (?,?)", sql)
 
-	sql, _, _ = b.PlaceholderFormat(Dollar).ToSql()
+	sql, _, _ = b.PlaceholderFormat(Dollar).ToSQL()
 	assert.Equal(t, "INSERT INTO test VALUES ($1,$2)", sql)
 }
 
@@ -61,21 +61,22 @@ func TestInsertBuilderRunners(t *testing.T) {
 
 	expectedSQL := "INSERT INTO test VALUES (?)"
 
-	b.Exec()
-	assert.Equal(t, expectedSQL, db.LastExecSql)
+	_, err := b.Exec()
+	assert.NoError(t, err)
+	assert.Equal(t, expectedSQL, db.LastExecSQL)
 }
 
 func TestInsertBuilderNoRunner(t *testing.T) {
 	b := Insert("test").Values(1)
 
 	_, err := b.Exec()
-	assert.Equal(t, RunnerNotSet, err)
+	assert.Equal(t, ErrRunnerNotSet, err)
 }
 
 func TestInsertBuilderSetMap(t *testing.T) {
 	b := Insert("table").SetMap(Eq{"field1": 1, "field2": 2, "field3": 3})
 
-	sql, args, err := b.ToSql()
+	sql, args, err := b.ToSQL()
 	assert.NoError(t, err)
 
 	expectedSQL := "INSERT INTO table (field1,field2,field3) VALUES (?,?,?)"
@@ -89,7 +90,7 @@ func TestInsertBuilderSelect(t *testing.T) {
 	sb := Select("field1").From("table1").Where(Eq{"field1": 1})
 	ib := Insert("table2").Columns("field1").Select(sb)
 
-	sql, args, err := ib.ToSql()
+	sql, args, err := ib.ToSQL()
 	assert.NoError(t, err)
 
 	expectedSQL := "INSERT INTO table2 (field1) SELECT field1 FROM table1 WHERE field1 = ?"
@@ -104,7 +105,7 @@ func TestInsertBuilderReplace(t *testing.T) {
 
 	expectedSQL := "REPLACE INTO table VALUES (?)"
 
-	sql, _, err := b.ToSql()
+	sql, _, err := b.ToSQL()
 	assert.NoError(t, err)
 
 	assert.Equal(t, expectedSQL, sql)

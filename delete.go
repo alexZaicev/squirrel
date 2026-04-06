@@ -23,12 +23,12 @@ type deleteData struct {
 
 func (d *deleteData) Exec() (sql.Result, error) {
 	if d.RunWith == nil {
-		return nil, RunnerNotSet
+		return nil, ErrRunnerNotSet
 	}
 	return ExecWith(d.RunWith, d)
 }
 
-func (d *deleteData) ToSql() (sqlStr string, args []interface{}, err error) {
+func (d *deleteData) ToSQL() (sqlStr string, args []interface{}, err error) {
 	if len(d.From) == 0 {
 		err = fmt.Errorf("delete statements must specify a From table")
 		return
@@ -37,7 +37,7 @@ func (d *deleteData) ToSql() (sqlStr string, args []interface{}, err error) {
 	sql := &bytes.Buffer{}
 
 	if len(d.Prefixes) > 0 {
-		args, err = appendToSql(d.Prefixes, sql, " ", args)
+		args, err = appendToSQL(d.Prefixes, sql, " ", args)
 		if err != nil {
 			return
 		}
@@ -50,7 +50,7 @@ func (d *deleteData) ToSql() (sqlStr string, args []interface{}, err error) {
 
 	if len(d.WhereParts) > 0 {
 		sql.WriteString(" WHERE ")
-		args, err = appendToSql(d.WhereParts, sql, " AND ", args)
+		args, err = appendToSQL(d.WhereParts, sql, " AND ", args)
 		if err != nil {
 			return
 		}
@@ -73,7 +73,7 @@ func (d *deleteData) ToSql() (sqlStr string, args []interface{}, err error) {
 
 	if len(d.Suffixes) > 0 {
 		sql.WriteString(" ")
-		args, err = appendToSql(d.Suffixes, sql, " ", args)
+		args, err = appendToSQL(d.Suffixes, sql, " ", args)
 		if err != nil {
 			return
 		}
@@ -115,16 +115,16 @@ func (b DeleteBuilder) Exec() (sql.Result, error) {
 
 // SQL methods
 
-// ToSql builds the query into a SQL string and bound args.
-func (b DeleteBuilder) ToSql() (string, []interface{}, error) {
+// ToSQL builds the query into a SQL string and bound args.
+func (b DeleteBuilder) ToSQL() (string, []interface{}, error) {
 	data := builder.GetStruct(b).(deleteData)
-	return data.ToSql()
+	return data.ToSQL()
 }
 
-// MustSql builds the query into a SQL string and bound args.
+// MustSQL builds the query into a SQL string and bound args.
 // It panics if there are any errors.
-func (b DeleteBuilder) MustSql() (string, []interface{}) {
-	sql, args, err := b.ToSql()
+func (b DeleteBuilder) MustSQL() (string, []interface{}) {
+	sql, args, err := b.ToSQL()
 	if err != nil {
 		panic(err)
 	}
@@ -185,7 +185,7 @@ func (b DeleteBuilder) Query() (*sql.Rows, error) {
 
 func (d *deleteData) Query() (*sql.Rows, error) {
 	if d.RunWith == nil {
-		return nil, RunnerNotSet
+		return nil, ErrRunnerNotSet
 	}
 	return QueryWith(d.RunWith, d)
 }

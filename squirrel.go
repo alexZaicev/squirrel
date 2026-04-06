@@ -12,18 +12,18 @@ import (
 	"github.com/lann/builder"
 )
 
-// Sqlizer is the interface that wraps the ToSql method.
+// Sqlizer is the interface that wraps the ToSQL method.
 //
-// ToSql returns a SQL representation of the Sqlizer, along with a slice of args
+// ToSQL returns a SQL representation of the Sqlizer, along with a slice of args
 // as passed to e.g. database/sql.Exec. It can also return an error.
 type Sqlizer interface {
-	ToSql() (string, []interface{}, error)
+	ToSQL() (string, []interface{}, error)
 }
 
 // rawSqlizer is expected to do what Sqlizer does, but without finalizing placeholders.
 // This is useful for nested queries.
 type rawSqlizer interface {
-	toSqlRaw() (string, []interface{}, error)
+	toSQLRaw() (string, []interface{}, error)
 }
 
 // Execer is the interface that wraps the Exec method.
@@ -60,47 +60,47 @@ type Runner interface {
 	QueryRower
 }
 
-// WrapStdSql wraps a type implementing the standard SQL interface with methods that
+// WrapStdSQL wraps a type implementing the standard SQL interface with methods that
 // squirrel expects.
-func WrapStdSql(stdSql StdSql) Runner {
-	return &stdsqlRunner{stdSql}
+func WrapStdSQL(stdSQL StdSQL) Runner {
+	return &stdsqlRunner{stdSQL}
 }
 
-// StdSql encompasses the standard methods of the *sql.DB type, and other types that
+// StdSQL encompasses the standard methods of the *sql.DB type, and other types that
 // wrap these methods.
-type StdSql interface {
+type StdSQL interface {
 	Query(string, ...interface{}) (*sql.Rows, error)
 	QueryRow(string, ...interface{}) *sql.Row
 	Exec(string, ...interface{}) (sql.Result, error)
 }
 
 type stdsqlRunner struct {
-	StdSql
+	StdSQL
 }
 
 func (r *stdsqlRunner) QueryRow(query string, args ...interface{}) RowScanner {
-	return r.StdSql.QueryRow(query, args...)
+	return r.StdSQL.QueryRow(query, args...)
 }
 
 func setRunWith(b interface{}, runner BaseRunner) interface{} {
 	switch r := runner.(type) {
-	case StdSqlCtx:
-		runner = WrapStdSqlCtx(r)
-	case StdSql:
-		runner = WrapStdSql(r)
+	case StdSQLCtx:
+		runner = WrapStdSQLCtx(r)
+	case StdSQL:
+		runner = WrapStdSQL(r)
 	}
 	return builder.Set(b, "RunWith", runner)
 }
 
-// RunnerNotSet is returned by methods that need a Runner if it isn't set.
-var RunnerNotSet = fmt.Errorf("cannot run; no Runner set (RunWith)")
+// ErrRunnerNotSet is returned by methods that need a Runner if it isn't set.
+var ErrRunnerNotSet = fmt.Errorf("cannot run; no Runner set (RunWith)")
 
-// RunnerNotQueryRunner is returned by QueryRow if the RunWith value doesn't implement QueryRower.
-var RunnerNotQueryRunner = fmt.Errorf("cannot QueryRow; Runner is not a QueryRower")
+// ErrRunnerNotQueryRunner is returned by QueryRow if the RunWith value doesn't implement QueryRower.
+var ErrRunnerNotQueryRunner = fmt.Errorf("cannot QueryRow; Runner is not a QueryRower")
 
 // ExecWith Execs the SQL returned by s with db.
 func ExecWith(db Execer, s Sqlizer) (res sql.Result, err error) {
-	query, args, err := s.ToSql()
+	query, args, err := s.ToSQL()
 	if err != nil {
 		return
 	}
@@ -109,7 +109,7 @@ func ExecWith(db Execer, s Sqlizer) (res sql.Result, err error) {
 
 // QueryWith Querys the SQL returned by s with db.
 func QueryWith(db Queryer, s Sqlizer) (rows *sql.Rows, err error) {
-	query, args, err := s.ToSql()
+	query, args, err := s.ToSQL()
 	if err != nil {
 		return
 	}
@@ -118,23 +118,23 @@ func QueryWith(db Queryer, s Sqlizer) (rows *sql.Rows, err error) {
 
 // QueryRowWith QueryRows the SQL returned by s with db.
 func QueryRowWith(db QueryRower, s Sqlizer) RowScanner {
-	query, args, err := s.ToSql()
+	query, args, err := s.ToSQL()
 	return &Row{RowScanner: db.QueryRow(query, args...), err: err}
 }
 
-// DebugSqlizer calls ToSql on s and shows the approximate SQL to be executed
+// DebugSqlizer calls ToSQL on s and shows the approximate SQL to be executed
 //
-// If ToSql returns an error, the result of this method will look like:
-// "[ToSql error: %s]" or "[DebugSqlizer error: %s]"
+// If ToSQL returns an error, the result of this method will look like:
+// "[ToSQL error: %s]" or "[DebugSqlizer error: %s]"
 //
 // IMPORTANT: As its name suggests, this function should only be used for
 // debugging. While the string result *might* be valid SQL, this function does
 // not try very hard to ensure it. Additionally, executing the output of this
 // function with any untrusted user input is certainly insecure.
 func DebugSqlizer(s Sqlizer) string {
-	sql, args, err := s.ToSql()
+	sql, args, err := s.ToSQL()
 	if err != nil {
-		return fmt.Sprintf("[ToSql error: %s]", err)
+		return fmt.Sprintf("[ToSQL error: %s]", err)
 	}
 
 	var placeholder string

@@ -1,5 +1,4 @@
 //go:build go1.8
-// +build go1.8
 
 package squirrel
 
@@ -44,7 +43,7 @@ func NewStmtCacher(prep PreparerContext) DBProxyContext {
 func (sc *StmtCache) PrepareContext(ctx context.Context, query string) (*sql.Stmt, error) {
 	ctxPrep, ok := sc.prep.(PreparerContext)
 	if !ok {
-		return nil, NoContextSupport
+		return nil, ErrNoContextSupport
 	}
 	sc.mu.Lock()
 	defer sc.mu.Unlock()

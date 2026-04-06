@@ -14,12 +14,12 @@ func newPart(pred interface{}, args ...interface{}) Sqlizer {
 	return &part{pred, args}
 }
 
-func (p part) ToSql() (sql string, args []interface{}, err error) {
+func (p part) ToSQL() (sql string, args []interface{}, err error) {
 	switch pred := p.pred.(type) {
 	case nil:
 		// no-op
 	case Sqlizer:
-		sql, args, err = nestedToSql(pred)
+		sql, args, err = nestedToSQL(pred)
 	case string:
 		sql = pred
 		args = p.args
@@ -29,20 +29,19 @@ func (p part) ToSql() (sql string, args []interface{}, err error) {
 	return
 }
 
-func nestedToSql(s Sqlizer) (string, []interface{}, error) {
+func nestedToSQL(s Sqlizer) (string, []interface{}, error) {
 	if raw, ok := s.(rawSqlizer); ok {
-		return raw.toSqlRaw()
-	} else {
-		return s.ToSql()
+		return raw.toSQLRaw()
 	}
+	return s.ToSQL()
 }
 
-func appendToSql(parts []Sqlizer, w io.Writer, sep string, args []interface{}) ([]interface{}, error) {
+func appendToSQL(parts []Sqlizer, w io.Writer, sep string, args []interface{}) ([]interface{}, error) {
 	for i, p := range parts {
-		partSql, partArgs, err := nestedToSql(p)
+		partSQL, partArgs, err := nestedToSQL(p)
 		if err != nil {
 			return nil, err
-		} else if len(partSql) == 0 {
+		} else if len(partSQL) == 0 {
 			continue
 		}
 
@@ -53,7 +52,7 @@ func appendToSql(parts []Sqlizer, w io.Writer, sep string, args []interface{}) (
 			}
 		}
 
-		_, err = io.WriteString(w, partSql)
+		_, err = io.WriteString(w, partSQL)
 		if err != nil {
 			return nil, err
 		}

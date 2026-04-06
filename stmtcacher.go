@@ -96,7 +96,7 @@ func (sc *StmtCache) Clear() (err error) {
 	}
 
 	if err != nil {
-		return fmt.Errorf("one or more Stmt.Close failed; last error: %v", err)
+		return fmt.Errorf("one or more Stmt.Close failed; last error: %w", err)
 	}
 
 	return

@@ -98,7 +98,6 @@ func Case(what ...interface{}) CaseBuilder {
 		b = b.what(what[0])
 	default:
 		b = b.what(newPart(what[0], what[1:]...))
-
 	}
 	return b
 }
