@@ -94,7 +94,7 @@ func (d *updateData) toSQLRaw() (sqlStr string, args []any, err error) {
 	for i, setClause := range d.SetClauses {
 		var valSQL string
 		if vs, ok := setClause.value.(Sqlizer); ok {
-			vsql, vargs, err := vs.ToSQL()
+			vsql, vargs, err := nestedToSQL(vs)
 			if err != nil {
 				return "", nil, err
 			}

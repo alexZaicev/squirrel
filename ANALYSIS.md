@@ -338,11 +338,13 @@ query.Where(filters) // if no conditions → WHERE (1=0) → zero rows!
 
 **Files modified:** `expr.go`, `part.go`, `select.go`, `update.go`, `delete.go`, `insert.go`, `expr_test.go`, `where_test.go`, `integration/expr_test.go`. Full unit test coverage including nil `Or`/`And`, empty `Or{}`/`And{}`, nil `Or`/`And` in `Where()`, nil followed by real conditions, real conditions followed by nil, Dollar placeholder correctness, and `appendToSQL` separator correctness with empty first parts. Integration tests cover nil/empty `Or`/`And` producing no filter (returning all rows), and combined with real conditions.
 
-### 3.4 🔴 HIGH — Dollar Placeholder Misnumbering with Subqueries in `UpdateBuilder.Set`
+### 3.4 ✅ FIXED — Dollar Placeholder Misnumbering with Subqueries in `UpdateBuilder.Set`
 
 > **GitHub [#326](https://github.com/Masterminds/squirrel/issues/326)** — "UpdateBuilder.Set with subquery produces wrong dollar parameter placeholders" (opened 2022-07-25).
 
-When using a `SelectBuilder` subquery as a value in `UpdateBuilder.Set()` with `Dollar` placeholders, the placeholder numbers restart from `$1` inside the subquery instead of continuing from the outer query's count, producing duplicate placeholder numbers and incorrect parameter binding.
+**Fixed.** The root cause was that `updateData.toSQLRaw()` called `vs.ToSQL()` on `Sqlizer` values in SET clauses, which applied the placeholder format (e.g., Dollar `$1, $2, ...`) on the inner subquery. When the outer `ToSQL()` then applied `ReplacePlaceholders` on the full SQL string, it numbered only the remaining `?` placeholders, causing duplicate/misnumbered positional parameters.
+
+The fix replaces `vs.ToSQL()` with `nestedToSQL(vs)` in the SET clause handling, which calls `toSQLRaw()` on builders that implement the `rawSqlizer` interface. This keeps inner placeholders as `?` so the outer `ReplacePlaceholders` pass numbers everything sequentially. The same fix was applied to `appendSetClauses()`, `appendValuesToSQL()`, and `appendSelectToSQL()` in `insert.go` which had the identical bug pattern.
 
 ### 3.5 🟡 HIGH — Misplaced Parameters with Window Functions / Complex Subqueries
 

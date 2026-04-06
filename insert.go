@@ -158,7 +158,7 @@ func (d *insertData) appendValuesToSQL(w io.Writer, args []any) ([]any, error) {
 		valueStrings := make([]string, len(row))
 		for v, val := range row {
 			if vs, ok := val.(Sqlizer); ok {
-				vsql, vargs, err := vs.ToSQL()
+				vsql, vargs, err := nestedToSQL(vs)
 				if err != nil {
 					return nil, err
 				}
@@ -184,7 +184,7 @@ func (d *insertData) appendSelectToSQL(w io.Writer, args []any) ([]any, error) {
 		return args, errors.New("select clause for insert statements are not set")
 	}
 
-	selectClause, sArgs, err := d.Select.ToSQL()
+	selectClause, sArgs, err := nestedToSQL(d.Select)
 	if err != nil {
 		return args, err
 	}
@@ -279,7 +279,7 @@ func appendSetClauses(setClauses []setClause, w io.Writer, args []any) ([]any, e
 	for i, sc := range setClauses {
 		var valSQL string
 		if vs, ok := sc.value.(Sqlizer); ok {
-			vsql, vargs, err := vs.ToSQL()
+			vsql, vargs, err := nestedToSQL(vs)
 			if err != nil {
 				return nil, err
 			}

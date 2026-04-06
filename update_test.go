@@ -225,3 +225,97 @@ func TestUpdateBuilderParameterizedLimitPreparedStatementReuse(t *testing.T) {
 	assert.Equal(t, sql1, sql2)
 	assert.Equal(t, "UPDATE users SET name = ? LIMIT ?", sql1)
 }
+
+func TestUpdateBuilderSetSubqueryDollarPlaceholders(t *testing.T) {
+	// Regression test for GitHub #326: Dollar placeholder misnumbering
+	// with subqueries in UpdateBuilder.Set.
+	b := Update("t").
+		Set("a", 1).
+		Set("b", Select("x").From("y").Where("z = ?", 2)).
+		Where("id = ?", 3).
+		PlaceholderFormat(Dollar)
+
+	sql, args, err := b.ToSQL()
+	assert.NoError(t, err)
+
+	expectedSQL := "UPDATE t SET a = $1, b = (SELECT x FROM y WHERE z = $2) WHERE id = $3"
+	assert.Equal(t, expectedSQL, sql)
+
+	expectedArgs := []any{1, 2, 3}
+	assert.Equal(t, expectedArgs, args)
+}
+
+func TestUpdateBuilderSetMultipleSubqueriesDollarPlaceholders(t *testing.T) {
+	// Multiple subqueries with Dollar placeholders should number sequentially.
+	b := Update("t").
+		Set("a", Select("x").From("y").Where("y.id = ?", 1)).
+		Set("b", Select("p").From("q").Where("q.id = ?", 2)).
+		Where("id = ?", 3).
+		PlaceholderFormat(Dollar)
+
+	sql, args, err := b.ToSQL()
+	assert.NoError(t, err)
+
+	expectedSQL := "UPDATE t " +
+		"SET a = (SELECT x FROM y WHERE y.id = $1), " +
+		"b = (SELECT p FROM q WHERE q.id = $2) " +
+		"WHERE id = $3"
+	assert.Equal(t, expectedSQL, sql)
+
+	expectedArgs := []any{1, 2, 3}
+	assert.Equal(t, expectedArgs, args)
+}
+
+func TestUpdateBuilderSetSubqueryColonPlaceholders(t *testing.T) {
+	// Colon-style positional placeholders should also number correctly.
+	b := Update("t").
+		Set("a", 1).
+		Set("b", Select("x").From("y").Where("z = ?", 2)).
+		Where("id = ?", 3).
+		PlaceholderFormat(Colon)
+
+	sql, args, err := b.ToSQL()
+	assert.NoError(t, err)
+
+	expectedSQL := "UPDATE t SET a = :1, b = (SELECT x FROM y WHERE z = :2) WHERE id = :3"
+	assert.Equal(t, expectedSQL, sql)
+
+	expectedArgs := []any{1, 2, 3}
+	assert.Equal(t, expectedArgs, args)
+}
+
+func TestUpdateBuilderSetExprSubqueryDollarPlaceholders(t *testing.T) {
+	// Non-SelectBuilder Sqlizer (e.g. Expr) should also work correctly.
+	b := Update("t").
+		Set("a", 1).
+		Set("b", Expr("(SELECT x FROM y WHERE z = ?)", 2)).
+		Where("id = ?", 3).
+		PlaceholderFormat(Dollar)
+
+	sql, args, err := b.ToSQL()
+	assert.NoError(t, err)
+
+	expectedSQL := "UPDATE t SET a = $1, b = (SELECT x FROM y WHERE z = $2) WHERE id = $3"
+	assert.Equal(t, expectedSQL, sql)
+
+	expectedArgs := []any{1, 2, 3}
+	assert.Equal(t, expectedArgs, args)
+}
+
+func TestUpdateBuilderSetCaseSubqueryDollarPlaceholders(t *testing.T) {
+	// CaseBuilder within Set should also number correctly with Dollar.
+	b := Update("t").
+		Set("a", 1).
+		Set("b", Case().When("x = ?", Expr("?", 2)).Else(Expr("?", 3))).
+		Where("id = ?", 4).
+		PlaceholderFormat(Dollar)
+
+	sql, args, err := b.ToSQL()
+	assert.NoError(t, err)
+
+	expectedSQL := "UPDATE t SET a = $1, b = CASE WHEN x = $2 THEN $3 ELSE $4 END WHERE id = $5"
+	assert.Equal(t, expectedSQL, sql)
+
+	expectedArgs := []any{1, 2, 3, 4}
+	assert.Equal(t, expectedArgs, args)
+}

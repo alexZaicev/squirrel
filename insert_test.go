@@ -501,3 +501,58 @@ func TestInsertBuilderReturningWithOnConflict(t *testing.T) {
 	expectedArgs := []any{1, "John"}
 	assert.Equal(t, expectedArgs, args)
 }
+
+func TestInsertBuilderSelectSubqueryDollarPlaceholders(t *testing.T) {
+	// Regression test: INSERT ... SELECT with Dollar placeholders should
+	// number all placeholders sequentially without duplicates.
+	b := Insert("dst").
+		Columns("a", "b").
+		Select(Select("x", "y").From("src").Where("z = ?", 1)).
+		PlaceholderFormat(Dollar)
+
+	sql, args, err := b.ToSQL()
+	assert.NoError(t, err)
+
+	expectedSQL := "INSERT INTO dst (a,b) SELECT x, y FROM src WHERE z = $1"
+	assert.Equal(t, expectedSQL, sql)
+
+	expectedArgs := []any{1}
+	assert.Equal(t, expectedArgs, args)
+}
+
+func TestInsertBuilderValuesSqlizerDollarPlaceholders(t *testing.T) {
+	// Regression test: Sqlizer values in INSERT VALUES with Dollar
+	// placeholders should number sequentially.
+	b := Insert("t").
+		Columns("a", "b").
+		Values(1, Expr("(SELECT x FROM y WHERE z = ?)", 2)).
+		PlaceholderFormat(Dollar)
+
+	sql, args, err := b.ToSQL()
+	assert.NoError(t, err)
+
+	expectedSQL := "INSERT INTO t (a,b) VALUES ($1,(SELECT x FROM y WHERE z = $2))"
+	assert.Equal(t, expectedSQL, sql)
+
+	expectedArgs := []any{1, 2}
+	assert.Equal(t, expectedArgs, args)
+}
+
+func TestInsertBuilderOnDuplicateKeySubqueryDollarPlaceholders(t *testing.T) {
+	// Regression test: ON DUPLICATE KEY UPDATE with subquery value and Dollar
+	// placeholders should number sequentially.
+	b := Insert("t").
+		Columns("a", "b").
+		Values(1, 2).
+		OnDuplicateKeyUpdate("b", Select("x").From("y").Where("z = ?", 3)).
+		PlaceholderFormat(Dollar)
+
+	sql, args, err := b.ToSQL()
+	assert.NoError(t, err)
+
+	expectedSQL := "INSERT INTO t (a,b) VALUES ($1,$2) ON DUPLICATE KEY UPDATE b = (SELECT x FROM y WHERE z = $3)"
+	assert.Equal(t, expectedSQL, sql)
+
+	expectedArgs := []any{1, 2, 3}
+	assert.Equal(t, expectedArgs, args)
+}

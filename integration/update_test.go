@@ -739,3 +739,87 @@ func TestUpdateReturningToSQL(t *testing.T) {
 		assert.Equal(t, "UPDATE t SET a = ? RETURNING id, a", sqlStr)
 	})
 }
+
+// ---------------------------------------------------------------------------
+// Set with subquery — Dollar placeholder numbering (GitHub #326)
+// ---------------------------------------------------------------------------
+
+func TestUpdateSetSubqueryDollarPlaceholders(t *testing.T) {
+	// Regression test: Dollar placeholders must number sequentially across the
+	// outer SET clause and the inner subquery.
+	t.Run("SingleSubquery", func(t *testing.T) {
+		q := sqrl.Update("t").
+			Set("a", 1).
+			Set("b", sqrl.Select("x").From("y").Where("z = ?", 2)).
+			Where("id = ?", 3).
+			PlaceholderFormat(sqrl.Dollar)
+
+		sqlStr, args, err := q.ToSQL()
+		require.NoError(t, err)
+		assert.Equal(t, "UPDATE t SET a = $1, b = (SELECT x FROM y WHERE z = $2) WHERE id = $3", sqlStr)
+		assert.Equal(t, []interface{}{1, 2, 3}, args)
+	})
+
+	t.Run("MultipleSubqueries", func(t *testing.T) {
+		q := sqrl.Update("t").
+			Set("a", sqrl.Select("x").From("y").Where("y.id = ?", 1)).
+			Set("b", sqrl.Select("p").From("q").Where("q.id = ?", 2)).
+			Where("id = ?", 3).
+			PlaceholderFormat(sqrl.Dollar)
+
+		sqlStr, args, err := q.ToSQL()
+		require.NoError(t, err)
+		assert.Equal(t,
+			"UPDATE t "+
+				"SET a = (SELECT x FROM y WHERE y.id = $1), "+
+				"b = (SELECT p FROM q WHERE q.id = $2) "+
+				"WHERE id = $3", sqlStr)
+		assert.Equal(t, []interface{}{1, 2, 3}, args)
+	})
+
+	t.Run("SubqueryWithColon", func(t *testing.T) {
+		q := sqrl.Update("t").
+			Set("a", 1).
+			Set("b", sqrl.Select("x").From("y").Where("z = ?", 2)).
+			Where("id = ?", 3).
+			PlaceholderFormat(sqrl.Colon)
+
+		sqlStr, args, err := q.ToSQL()
+		require.NoError(t, err)
+		assert.Equal(t, "UPDATE t SET a = :1, b = (SELECT x FROM y WHERE z = :2) WHERE id = :3", sqlStr)
+		assert.Equal(t, []interface{}{1, 2, 3}, args)
+	})
+
+	t.Run("SubqueryWithAtP", func(t *testing.T) {
+		q := sqrl.Update("t").
+			Set("a", 1).
+			Set("b", sqrl.Select("x").From("y").Where("z = ?", 2)).
+			Where("id = ?", 3).
+			PlaceholderFormat(sqrl.AtP)
+
+		sqlStr, args, err := q.ToSQL()
+		require.NoError(t, err)
+		assert.Equal(t, "UPDATE t SET a = @p1, b = (SELECT x FROM y WHERE z = @p2) WHERE id = @p3", sqlStr)
+		assert.Equal(t, []interface{}{1, 2, 3}, args)
+	})
+}
+
+func TestUpdateSetSubqueryExecution(t *testing.T) {
+	// End-to-end execution: SET col = (SELECT ...) with the current driver's
+	// placeholder format.
+	createTable(t, "sq_upd_sub_src", "(id INTEGER, val INTEGER)")
+	createTable(t, "sq_upd_sub_dst", "(id INTEGER, total INTEGER)")
+	seedTable(t, "INSERT INTO sq_upd_sub_src VALUES (1, 42)")
+	seedTable(t, "INSERT INTO sq_upd_sub_dst VALUES (1, 0)")
+
+	_, err := sb.Update("sq_upd_sub_dst").
+		Set("total", sqrl.Select("val").From("sq_upd_sub_src").Where(sqrl.Eq{"sq_upd_sub_src.id": 1})).
+		Where(sqrl.Eq{"id": 1}).
+		Exec()
+	require.NoError(t, err)
+
+	var total int
+	err = db.QueryRow("SELECT total FROM sq_upd_sub_dst WHERE id = 1").Scan(&total)
+	require.NoError(t, err)
+	assert.Equal(t, 42, total)
+}
