@@ -2,7 +2,7 @@
 
 ## Project overview
 
-Squirrel is a fluent SQL query builder library for Go. It is **not** an ORM. It builds SQL strings (`SELECT`, `INSERT`, `UPDATE`, `DELETE`, `CASE`) from composable, chainable method calls and can optionally execute them against a `database/sql` runner.
+Squirrel is a fluent SQL query builder library for Go. It is **not** an ORM. It builds SQL strings (`SELECT`, `INSERT`, `UPDATE`, `DELETE`, `CASE`, `UNION`, `WITH`) from composable, chainable method calls and can optionally execute them against a `database/sql` runner.
 
 - **Module path:** `github.com/alexZaicev/squirrel`
 - **Go version:** `go 1.25.7` (specified in `go.mod`)
@@ -85,7 +85,7 @@ Each SQL statement type follows a consistent file structure:
 Shared utilities:
 - `squirrel.go` — Core interfaces (`Sqlizer`, `Execer`, `Queryer`, `Runner`, `StdSql`), helper functions (`ExecWith`, `QueryWith`, `DebugSqlizer`, `WrapStdSql`), sentinel errors (`RunnerNotSet`, `RunnerNotQueryRunner`)
 - `squirrel_ctx.go` — Context-aware interfaces (`ExecerContext`, `QueryerContext`, `RunnerContext`, `StdSqlCtx`) and helpers (`ExecContextWith`, `QueryContextWith`, `WrapStdSqlCtx`)
-- `expr.go` — Expression types: `Eq`, `NotEq`, `Lt`, `Gt`, `LtOrEq`, `GtOrEq`, `Like`, `NotLike`, `ILike`, `NotILike`, `And`, `Or`; functions: `Expr()`, `ConcatExpr()`, `Alias()`
+- `expr.go` — Expression types: `Eq`, `NotEq`, `Lt`, `Gt`, `LtOrEq`, `GtOrEq`, `Like`, `NotLike`, `ILike`, `NotILike`, `And`, `Or`; functions: `Expr()`, `ConcatExpr()`, `Alias()`. `Eq`/`NotEq` accept `Sqlizer` values for `WHERE col IN (SELECT ...)` subqueries. `Lt`/`Gt`/`LtOrEq`/`GtOrEq` accept `Sqlizer` values for scalar subquery comparisons.
 - `placeholder.go` — `PlaceholderFormat` interface and implementations: `Question`, `Dollar`, `Colon`, `AtP`; utility function `Placeholders(count)`
 - `where.go` — `wherePart` implementation
 - `part.go` — Generic `part` struct, `newPart`, `nestedToSql`, and `appendToSql` helper
@@ -138,16 +138,30 @@ The `Placeholders(count int) string` function generates a comma-separated list o
 - `SetMap()` — set columns and values from a `map[string]interface{}`
 - `Select()` — `INSERT ... SELECT` support
 - `Options()` — add keywords like `IGNORE` before INTO
+- `Returning()` — add `RETURNING` clause (PostgreSQL, SQLite 3.35+)
+- `OnConflictColumns()`, `OnConflictOnConstraint()` — set conflict target for PostgreSQL upsert
+- `OnConflictDoNothing()` — `ON CONFLICT ... DO NOTHING`
+- `OnConflictDoUpdate()`, `OnConflictDoUpdateMap()` — `ON CONFLICT ... DO UPDATE SET`
+- `OnConflictWhere()` — add `WHERE` to the `DO UPDATE` action
+- `OnDuplicateKeyUpdate()`, `OnDuplicateKeyUpdateMap()` — MySQL `ON DUPLICATE KEY UPDATE`
 - `statementKeyword()` (private) — used by `Replace()` to change `INSERT` to `REPLACE`
 
 **UpdateBuilder** notable methods:
 - `Table()`, `Set()`, `SetMap()`
 - `From()`, `FromSelect()` — PostgreSQL-style `UPDATE ... FROM`
 - `Where()`, `OrderBy()`, `Limit()`, `Offset()`
+- `Returning()` — add `RETURNING` clause (PostgreSQL, SQLite 3.35+)
 
 **DeleteBuilder** notable methods:
 - `From()`, `Where()`, `OrderBy()`, `Limit()`, `Offset()`
+- `Returning()` — add `RETURNING` clause (PostgreSQL, SQLite 3.35+)
 - `Query()` — useful with `RETURNING` clauses
+
+**UnionBuilder** notable methods:
+- `Union()`, `UnionAll()`, `Intersect()`, `Except()` — add set operations
+- `OrderBy()`, `OrderByClause()` — ORDER BY on the combined result
+- `Limit()`, `RemoveLimit()`, `Offset()`, `RemoveOffset()` — pagination on the combined result
+- Package-level constructors: `Union()`, `UnionAll()`, `Intersect()`, `Except()`
 
 **CteBuilder** notable methods:
 - `With()`, `WithRecursive()` — add CTE definitions (`WITH name AS (...)`)
@@ -195,6 +209,7 @@ Do not add new dependencies without strong justification. This is a maintenance-
 - `builder.Set`, `builder.Append`, and `builder.Extend` return `interface{}` and must be type-asserted back to the builder type.
 - All builder `init()` functions must call `builder.Register()` — forgetting this causes runtime panics.
 - When nesting `SelectBuilder` as a subquery (e.g., `FromSelect`, `INSERT ... SELECT`), the inner query's placeholder format must be reset to `Question` to prevent double-replacement by the outer query. `FromSelect` does this automatically; `InsertBuilder.Select()` does **not**.
+- When using `Sqlizer` values in `Eq`/`NotEq`/`Lt`/`Gt`/`LtOrEq`/`GtOrEq` (subquery in expression position), the expressions use `nestedToSQL` internally, which calls `toSQLRaw()` to prevent double placeholder replacement. This works automatically — callers do not need to reset placeholder formats on the inner query.
 - `[]byte` and `[]uint8` are indistinguishable in Go — `Eq{"col": []uint8{1,2,3}}` will **not** produce an `IN` clause because `database/sql` treats `[]byte` as a single value.
 - The `DebugSqlizer` function is for debugging only — its output is not guaranteed to be valid SQL and must never be used for execution.
 - Empty `Eq{}` evaluates to `(1=1)` (true) and empty `And{}` also evaluates to `(1=1)`. Empty `Or{}` evaluates to `(1=0)` (false).
