@@ -419,23 +419,35 @@ if needC {
 
 **Files modified:** `insert.go`, `insert_test.go`, `integration/insert_test.go`. Unit tests cover: basic incremental building, conditional addition (true and false paths), mixing with `Columns().Values()`, multi-row append, Dollar placeholder correctness, Sqlizer values, ON CONFLICT composition, RETURNING composition, single column, nil values, and `SafeSetColumn`. Integration tests (SQLite) cover: basic insert, conditional insert, skipped condition, mixed with Columns/Values, multi-row append, null values, Dollar placeholder SQL generation, and RETURNING with SetColumn.
 
-### 3.8 🟡 MEDIUM — `nil` Array in `Eq` Produces `(1=0)` Instead of `IS NULL`
+### 3.8 ✅ FIXED — `nil` Array in `Eq` Produces `(1=0)` Instead of `IS NULL`
 
 > **GitHub [#277](https://github.com/Masterminds/squirrel/issues/277)** — "Null array in where clause argument causes an invalid where clause (1=0)" (opened 2021-02-10).
 
 `sq.Eq{"id": ids}` where `ids` is a `nil` `[]uint64` produces `(1=0)` (empty-IN identity) rather than `id IS NULL` or simply omitting the clause. This silently breaks queries when a filter slice hasn't been populated.
 
-### 3.9 🟡 MEDIUM — `Where()` with Raw String + Slice Arg Doesn't Expand
+**Fixed** (April 2026) by checking `valVal.IsNil()` for slice types before checking `valVal.Len() == 0` in `Eq.toSQL()`. A nil slice now produces `col IS NULL` (for `Eq`) or `col IS NOT NULL` (for `NotEq`) instead of the empty-IN identity `(1=0)` / `(1=1)`. An explicitly empty (non-nil) slice `[]int{}` still produces `(1=0)` / `(1=1)` as before. The `IsNil()` check is guarded to only apply to `reflect.Slice` (not `reflect.Array`, which cannot be nil) to avoid a runtime panic.
+
+**Files modified:** `expr.go`, `expr_test.go`, `integration/expr_test.go`. Unit tests cover: `Eq` with nil `[]uint64` → `IS NULL`, `NotEq` with nil `[]int` → `IS NOT NULL`, nil slice combined with other keys. Integration tests cover: nil slice `Eq` returning NULL-category rows, nil slice `NotEq` returning non-NULL rows.
+
+### 3.9 ✅ FIXED — `Where()` with Raw String + Slice Arg Doesn't Expand
 
 > **GitHub [#383](https://github.com/Masterminds/squirrel/issues/383)** — "Where with raw sql string and slice arg" (2 comments, opened 2024-10-22).
 
 `Where("id NOT IN ?", []int{1,2,3})` produces `id NOT IN '[1 2 3]'` (Go's `%v` of the slice) instead of expanding to `id NOT IN (?,?,?)`. The `wherePart` for raw strings doesn't introspect slice args the way `Eq` does.
 
-### 3.10 🟡 LOW — `Where()` Doesn't Auto-Parenthesize Raw OR Expressions
+**Fixed** (April 2026) by adding `expandWhereArgs()` to `where.go`. When a raw string where-part contains slice or array arguments (excluding `[]byte`, which `database/sql` treats as a single value), the function walks the SQL string placeholder-by-placeholder and expands each slice arg into `(?,?,?)` with the individual elements as bound args. Escaped `??` sequences are preserved. Scalar args pass through unchanged.
+
+**Files modified:** `where.go`, `where_test.go`, `integration/select_test.go`. Unit tests cover: `NOT IN` with slice, `IN` with slice, mixed scalar + slice, empty slice, single-element slice, `[]byte` not expanded, escaped `??` preserved, combined with OR auto-parenthesization. Integration tests cover: `NOT IN` exclusion, `IN` inclusion, mixed scalar + slice against live SQLite.
+
+### 3.10 ✅ FIXED — `Where()` Doesn't Auto-Parenthesize Raw OR Expressions
 
 > **GitHub [#380](https://github.com/Masterminds/squirrel/issues/380)** — "Auto-parenthesis for Where()" (opened 2024-07-21).
 
 `.Where("a = ? OR b = ?", 1, 2)` combined with another `.Where(...)` produces `WHERE a = ? OR b = ? AND c = ?` — the lack of auto-parenthesization around each `Where()` clause can cause unexpected operator precedence. Other query builders (e.g., GORM) wrap each clause.
+
+**Fixed** (April 2026) by adding `needsParens()` to `where.go`. Raw string where-parts that contain a bare ` OR ` keyword (case-insensitive) are automatically wrapped in parentheses. Clauses containing only ` AND ` are **not** wrapped because the separator between Where() parts is already `AND`, so precedence is already correct. Clauses that are already fully parenthesized at the outermost level are not double-wrapped.
+
+**Files modified:** `where.go`, `where_test.go`, `integration/select_test.go`. Unit tests cover: OR auto-parenthesized, OR combined with another Where via `appendToSQL`, simple expression not parenthesized, AND-only not parenthesized, already-parenthesized not double-wrapped, slice expansion + OR combined. Integration tests cover: OR combined with another Where (checking correct query results), OR alone, SQL generation verification for OR and AND cases.
 
 ---
 
@@ -507,9 +519,9 @@ if needC {
 | ✅ Fixed | Conditional insert columns/values produce invalid SQL | [#336](https://github.com/Masterminds/squirrel/issues/336) | Bug |
 | ✅ Fixed | Multiple `Distinct()` calls produce invalid SQL | [#281](https://github.com/Masterminds/squirrel/issues/281) | Bug |
 | ✅ Fixed | Multi-key `Eq` inside `Or` missing parentheses | [#269](https://github.com/Masterminds/squirrel/issues/269) | Bug |
-| 🟡 Medium | `nil` array in `Eq` produces `(1=0)` instead of `IS NULL` | [#277](https://github.com/Masterminds/squirrel/issues/277) | Bug |
-| 🟡 Medium | `Where()` with raw string + slice arg doesn't expand | [#383](https://github.com/Masterminds/squirrel/issues/383) | Bug |
-| 🟢 Low | `Where()` doesn't auto-parenthesize raw OR expressions | [#380](https://github.com/Masterminds/squirrel/issues/380) | Bug |
+| ✅ Fixed | `nil` array in `Eq` produces `IS NULL` (was `(1=0)`) | [#277](https://github.com/Masterminds/squirrel/issues/277) | Bug |
+| ✅ Fixed | `Where()` with raw string + slice arg now expands to `(?,?,?)` | [#383](https://github.com/Masterminds/squirrel/issues/383) | Bug |
+| ✅ Fixed | `Where()` auto-parenthesizes raw OR expressions | [#380](https://github.com/Masterminds/squirrel/issues/380) | Bug |
 
 ### Feature Requests
 

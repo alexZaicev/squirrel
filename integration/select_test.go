@@ -1162,3 +1162,107 @@ func TestSelectUnionViaSuffix(t *testing.T) {
 	// Assert — apple, banana, donut (UNION removes duplicates; order may vary)
 	assert.ElementsMatch(t, []string{"apple", "banana", "donut"}, names)
 }
+
+// ---------------------------------------------------------------------------
+// Where() with raw string + slice arg expansion — GitHub #383
+// ---------------------------------------------------------------------------
+
+func TestSelectWhereRawSliceArgExpansion(t *testing.T) {
+	t.Run("NotIN", func(t *testing.T) {
+		// Arrange — Where("id NOT IN ?", []int{1,2}) should expand to id NOT IN (?,?)
+		q := sb.Select("name").From("sq_items").
+			Where("id NOT IN ?", []int{1, 2}).
+			Where(sqrl.NotEq{"category": nil}). // exclude NULL
+			OrderBy("id")
+
+		// Act
+		names := queryStrings(t, q)
+
+		// Assert — exclude apple(1) and banana(2), exclude mystery (NULL category)
+		assert.Equal(t, []string{"carrot", "donut", "eggplant"}, names)
+	})
+
+	t.Run("IN", func(t *testing.T) {
+		// Arrange
+		q := sb.Select("name").From("sq_items").
+			Where("id IN ?", []int{1, 3, 5}).
+			OrderBy("id")
+
+		// Act
+		names := queryStrings(t, q)
+
+		// Assert
+		assert.Equal(t, []string{"apple", "carrot", "eggplant"}, names)
+	})
+
+	t.Run("MixedScalarAndSlice", func(t *testing.T) {
+		// Arrange — mix scalar and slice args
+		q := sb.Select("name").From("sq_items").
+			Where("category = ? AND id IN ?", "fruit", []int{1, 2}).
+			OrderBy("id")
+
+		// Act
+		names := queryStrings(t, q)
+
+		// Assert
+		assert.Equal(t, []string{"apple", "banana"}, names)
+	})
+}
+
+// ---------------------------------------------------------------------------
+// Where() auto-parenthesization of OR expressions — GitHub #380
+// ---------------------------------------------------------------------------
+
+func TestSelectWhereAutoParenOR(t *testing.T) {
+	t.Run("ORCombinedWithAnotherWhere", func(t *testing.T) {
+		// Arrange — "a OR b" combined with "c" should be "(a OR b) AND c",
+		// not "a OR b AND c" which would be "a OR (b AND c)".
+		q := sb.Select("name").From("sq_items").
+			Where("category = ? OR category = ?", "fruit", "pastry").
+			Where("price >= ?", 100).
+			OrderBy("id")
+
+		// Act
+		names := queryStrings(t, q)
+
+		// Assert — fruit with price>=100: apple(100); pastry with price>=100: donut(200)
+		assert.Equal(t, []string{"apple", "donut"}, names)
+	})
+
+	t.Run("ORAlone", func(t *testing.T) {
+		// Arrange — single OR clause without other Where() should still work
+		q := sb.Select("name").From("sq_items").
+			Where("category = ? OR category = ?", "fruit", "vegetable").
+			OrderBy("id")
+
+		// Act
+		names := queryStrings(t, q)
+
+		// Assert
+		assert.Equal(t, []string{"apple", "banana", "carrot", "eggplant"}, names)
+	})
+
+	t.Run("SQLGenerationOR", func(t *testing.T) {
+		// Verify the generated SQL has parentheses around the OR clause
+		q := sqrl.Select("name").From("sq_items").
+			Where("a = ? OR b = ?", 1, 2).
+			Where("c = ?", 3)
+
+		sqlStr, args, err := q.ToSQL()
+		require.NoError(t, err)
+		assert.Equal(t, "SELECT name FROM sq_items WHERE (a = ? OR b = ?) AND c = ?", sqlStr)
+		assert.Equal(t, []interface{}{1, 2, 3}, args)
+	})
+
+	t.Run("SQLGenerationNoParenForAND", func(t *testing.T) {
+		// AND-only expressions should NOT be parenthesized
+		q := sqrl.Select("name").From("sq_items").
+			Where("a = ? AND b = ?", 1, 2).
+			Where("c = ?", 3)
+
+		sqlStr, args, err := q.ToSQL()
+		require.NoError(t, err)
+		assert.Equal(t, "SELECT name FROM sq_items WHERE a = ? AND b = ? AND c = ?", sqlStr)
+		assert.Equal(t, []interface{}{1, 2, 3}, args)
+	})
+}

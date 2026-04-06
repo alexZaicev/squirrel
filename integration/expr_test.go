@@ -84,6 +84,33 @@ func TestExprEq(t *testing.T) {
 		// Assert
 		assert.Equal(t, []string{"banana"}, names)
 	})
+
+	t.Run("NilSliceIsNull", func(t *testing.T) {
+		// GitHub #277: nil slice should produce IS NULL, not (1=0).
+		// Row 6 ('mystery') has NULL category.
+		var cats []string
+		q := sb.Select("name").From("sq_items").Where(sqrl.Eq{"category": cats})
+
+		// Act
+		names := queryStrings(t, q)
+
+		// Assert
+		assert.Equal(t, []string{"mystery"}, names)
+	})
+
+	t.Run("NilSliceIsNullNotEq", func(t *testing.T) {
+		// GitHub #277: nil slice with NotEq → IS NOT NULL.
+		var cats []string
+		q := sb.Select("name").From("sq_items").
+			Where(sqrl.NotEq{"category": cats}).
+			OrderBy("id")
+
+		// Act
+		names := queryStrings(t, q)
+
+		// Assert — all rows except mystery (which has NULL category)
+		assert.Equal(t, []string{"apple", "banana", "carrot", "donut", "eggplant"}, names)
+	})
 }
 
 // ---------------------------------------------------------------------------

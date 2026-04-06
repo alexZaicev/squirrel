@@ -241,7 +241,11 @@ func (eq Eq) toSQL(useNotOpr bool) (sql string, args []any, err error) {
 		} else {
 			if isListType(val) {
 				valVal := reflect.ValueOf(val)
-				if valVal.Len() == 0 {
+				if valVal.Kind() == reflect.Slice && valVal.IsNil() {
+					// A nil slice (e.g. []uint64(nil)) is treated as NULL,
+					// not as an empty IN list. GitHub #277.
+					expr = fmt.Sprintf("%s %s NULL", key, nullOpr)
+				} else if valVal.Len() == 0 {
 					expr = inEmptyExpr
 					if args == nil {
 						args = []any{}

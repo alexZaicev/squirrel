@@ -119,6 +119,36 @@ func TestEqBytesToSql(t *testing.T) {
 	assert.Equal(t, expectedArgs, args)
 }
 
+func TestEqNilSliceToSql(t *testing.T) {
+	// GitHub #277: nil slice should produce IS NULL, not (1=0).
+	var ids []uint64
+	b := Eq{"id": ids}
+	sql, args, err := b.ToSQL()
+	assert.NoError(t, err)
+	assert.Equal(t, "id IS NULL", sql)
+	assert.Empty(t, args)
+}
+
+func TestNotEqNilSliceToSql(t *testing.T) {
+	// GitHub #277: nil slice with NotEq should produce IS NOT NULL.
+	var ids []int
+	b := NotEq{"id": ids}
+	sql, args, err := b.ToSQL()
+	assert.NoError(t, err)
+	assert.Equal(t, "id IS NOT NULL", sql)
+	assert.Empty(t, args)
+}
+
+func TestEqNilSliceMultiKey(t *testing.T) {
+	// GitHub #277: nil slice combined with other keys.
+	var ids []int
+	b := Eq{"id": ids, "name": "test"}
+	sql, args, err := b.ToSQL()
+	assert.NoError(t, err)
+	assert.Equal(t, "(id IS NULL AND name = ?)", sql)
+	assert.Equal(t, []any{"test"}, args)
+}
+
 func TestLtToSql(t *testing.T) {
 	b := Lt{"id": 1}
 	sql, args, err := b.ToSQL()
