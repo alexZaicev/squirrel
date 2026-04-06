@@ -1,7 +1,7 @@
 # Squirrel Library — Thorough Analysis
 
 > Generated: April 4, 2026
-> Updated: April 6, 2026 — marked §1.1 (UNION/INTERSECT/EXCEPT) as done
+> Updated: April 6, 2026 — marked §1.1 (UNION/INTERSECT/EXCEPT) and §1.2 (Upsert) as done
 
 ---
 
@@ -14,8 +14,10 @@
 
 > **GitHub [#308](https://github.com/Masterminds/squirrel/issues/308)** — "Support UNION operator" (11 comments, opened 2022-02-24). The most-requested feature by comment count. Multiple users need UNION/UNION ALL for pagination CTEs, report queries, and combining result sets.
 
-### 1.2 `INSERT ... ON CONFLICT` (PostgreSQL) / `ON DUPLICATE KEY UPDATE` (MySQL) — "Upsert"
-The library has no upsert support. This is one of the most commonly needed write patterns. Users currently have to build it with raw `Suffix("ON CONFLICT ...")`, which is fragile, untyped, and error-prone — particularly for **multi-row inserts** where the suffix approach breaks down. A first-class `OnConflict` / `OnDuplicateKeyUpdate` builder clause on `InsertBuilder` would be very valuable.
+### 1.2 ✅ `INSERT ... ON CONFLICT` (PostgreSQL) / `ON DUPLICATE KEY UPDATE` (MySQL) — "Upsert" — **DONE**
+~~The library has no upsert support. This is one of the most commonly needed write patterns. Users currently have to build it with raw `Suffix("ON CONFLICT ...")`, which is fragile, untyped, and error-prone — particularly for **multi-row inserts** where the suffix approach breaks down. A first-class `OnConflict` / `OnDuplicateKeyUpdate` builder clause on `InsertBuilder` would be very valuable.~~
+
+**Implemented** (April 2026) via new builder methods on `InsertBuilder`. PostgreSQL support: `OnConflictColumns()`, `OnConflictOnConstraint()`, `OnConflictDoNothing()`, `OnConflictDoUpdate()`, `OnConflictDoUpdateMap()`, `OnConflictWhere()`. MySQL support: `OnDuplicateKeyUpdate()`, `OnDuplicateKeyUpdateMap()`. Shared helper `appendSetClauses` for SET clause generation. Values can be literals or `Sqlizer` expressions (e.g., `Expr("EXCLUDED.col")`, `Expr("VALUES(col)")`, subqueries). Full unit and integration test coverage for SQLite, PostgreSQL, and MySQL.
 
 > **GitHub [#372](https://github.com/Masterminds/squirrel/issues/372)** — "Upsert/On Conflict support" (opened 2023-12-25). Specifically calls out the impossibility of using the `Suffix` workaround with multi-row inserts. Follow-up to older closed issue #83.
 
@@ -301,7 +303,7 @@ Building an insert incrementally — adding a column+value pair after the initia
 | Priority | Issue | GitHub |
 |----------|-------|--------|
 | ✅ Done | `UNION` / `UNION ALL` / `INTERSECT` / `EXCEPT` | [#308](https://github.com/Masterminds/squirrel/issues/308) |
-| ⭐ High | Upsert (`ON CONFLICT` / `ON DUPLICATE KEY UPDATE`) | [#372](https://github.com/Masterminds/squirrel/issues/372) |
+| ✅ Done | Upsert (`ON CONFLICT` / `ON DUPLICATE KEY UPDATE`) | [#372](https://github.com/Masterminds/squirrel/issues/372) |
 | ⭐ High | CTE (`WITH` / `WITH RECURSIVE`) builder | [#271](https://github.com/Masterminds/squirrel/issues/271) |
 | ⭐ High | Parameterized `LIMIT` / `OFFSET` | [#355](https://github.com/Masterminds/squirrel/issues/355) |
 | ⭐ High | Subquery in WHERE IN / expression position | [#299](https://github.com/Masterminds/squirrel/issues/299), [#258](https://github.com/Masterminds/squirrel/issues/258) |
