@@ -1,14 +1,16 @@
 # Squirrel Library — Thorough Analysis
 
 > Generated: April 4, 2026
-> Updated: April 4, 2026 — integrated open GitHub issues from https://github.com/Masterminds/squirrel/issues
+> Updated: April 6, 2026 — marked §1.1 (UNION/INTERSECT/EXCEPT) as done
 
 ---
 
 ## 1. Missing Core Features
 
-### 1.1 `UNION` / `UNION ALL` / `INTERSECT` / `EXCEPT` Support
-There is no way to compose set operations. Users must fall back to raw `Suffix`/`Prefix` hacks or string concatenation. A `UnionBuilder` (or methods on `SelectBuilder`) would benefit every database backend — it's standard SQL.
+### 1.1 ✅ `UNION` / `UNION ALL` / `INTERSECT` / `EXCEPT` Support — **DONE**
+~~There is no way to compose set operations. Users must fall back to raw `Suffix`/`Prefix` hacks or string concatenation.~~
+
+**Implemented** (April 2026) via a new `UnionBuilder` type following the same immutable builder pattern as all other builders. Files added: `union.go`, `union_ctx.go`, `union_test.go`, `union_ctx_test.go`, `integration/union_test.go`. Convenience functions `Union()`, `UnionAll()`, `Intersect()`, `Except()` added to `statement.go`.
 
 > **GitHub [#308](https://github.com/Masterminds/squirrel/issues/308)** — "Support UNION operator" (11 comments, opened 2022-02-24). The most-requested feature by comment count. Multiple users need UNION/UNION ALL for pagination CTEs, report queries, and combining result sets.
 
@@ -298,7 +300,7 @@ Building an insert incrementally — adding a column+value pair after the initia
 
 | Priority | Issue | GitHub |
 |----------|-------|--------|
-| ⭐ High | `UNION` / `UNION ALL` / `INTERSECT` / `EXCEPT` | [#308](https://github.com/Masterminds/squirrel/issues/308) |
+| ✅ Done | `UNION` / `UNION ALL` / `INTERSECT` / `EXCEPT` | [#308](https://github.com/Masterminds/squirrel/issues/308) |
 | ⭐ High | Upsert (`ON CONFLICT` / `ON DUPLICATE KEY UPDATE`) | [#372](https://github.com/Masterminds/squirrel/issues/372) |
 | ⭐ High | CTE (`WITH` / `WITH RECURSIVE`) builder | [#271](https://github.com/Masterminds/squirrel/issues/271) |
 | ⭐ High | Parameterized `LIMIT` / `OFFSET` | [#355](https://github.com/Masterminds/squirrel/issues/355) |
