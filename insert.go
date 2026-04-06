@@ -13,22 +13,22 @@ import (
 )
 
 type insertData struct {
-	PlaceholderFormat     PlaceholderFormat
-	RunWith               BaseRunner
-	Prefixes              []Sqlizer
-	StatementKeyword      string
-	Options               []string
-	Into                  string
-	Columns               []string
-	Values                [][]any
-	Suffixes              []Sqlizer
-	Select                *SelectBuilder
-	ConflictColumns       []string
-	ConflictConstraint    string
-	ConflictDoNothing     bool
-	ConflictDoUpdates     []setClause
-	ConflictWhereParts    []Sqlizer
-	DuplicateKeyUpdates   []setClause
+	PlaceholderFormat   PlaceholderFormat
+	RunWith             BaseRunner
+	Prefixes            []Sqlizer
+	StatementKeyword    string
+	Options             []string
+	Into                string
+	Columns             []string
+	Values              [][]any
+	Suffixes            []Sqlizer
+	Select              *SelectBuilder
+	ConflictColumns     []string
+	ConflictConstraint  string
+	ConflictDoNothing   bool
+	ConflictDoUpdates   []setClause
+	ConflictWhereParts  []Sqlizer
+	DuplicateKeyUpdates []setClause
 }
 
 func (d *insertData) Exec() (sql.Result, error) {
