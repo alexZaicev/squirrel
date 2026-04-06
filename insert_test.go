@@ -19,10 +19,9 @@ func TestInsertBuilderToSql(t *testing.T) {
 	sql, args, err := b.ToSql()
 	assert.NoError(t, err)
 
-	expectedSQL :=
-		"WITH prefix AS ? " +
-			"INSERT DELAYED IGNORE INTO a (b,c) VALUES (?,?),(?,? + 1) " +
-			"RETURNING ?"
+	expectedSQL := "WITH prefix AS ? " +
+		"INSERT DELAYED IGNORE INTO a (b,c) VALUES (?,?),(?,? + 1) " +
+		"RETURNING ?"
 	assert.Equal(t, expectedSQL, sql)
 
 	expectedArgs := []interface{}{0, 1, 2, 3, 4, 5}

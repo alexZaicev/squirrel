@@ -43,16 +43,15 @@ func TestSelectBuilderToSql(t *testing.T) {
 	sql, args, err := b.ToSql()
 	assert.NoError(t, err)
 
-	expectedSql :=
-		"WITH prefix AS ? " +
-			"SELECT DISTINCT a, b, c, IF(d IN (?,?,?), 1, 0) as stat_column, a > ?, " +
-			"(b IN (?,?,?)) AS b_alias, " +
-			"(SELECT aa, bb FROM dd) AS subq " +
-			"FROM e " +
-			"CROSS JOIN j1 JOIN j2 LEFT JOIN j3 RIGHT JOIN j4 INNER JOIN j5 CROSS JOIN j6 " +
-			"WHERE f = ? AND g = ? AND h = ? AND i IN (?,?,?) AND (j = ? OR (k = ? AND true)) " +
-			"GROUP BY l HAVING m = n ORDER BY ? DESC, o ASC, p DESC LIMIT 12 OFFSET 13 " +
-			"FETCH FIRST ? ROWS ONLY"
+	expectedSql := "WITH prefix AS ? " +
+		"SELECT DISTINCT a, b, c, IF(d IN (?,?,?), 1, 0) as stat_column, a > ?, " +
+		"(b IN (?,?,?)) AS b_alias, " +
+		"(SELECT aa, bb FROM dd) AS subq " +
+		"FROM e " +
+		"CROSS JOIN j1 JOIN j2 LEFT JOIN j3 RIGHT JOIN j4 INNER JOIN j5 CROSS JOIN j6 " +
+		"WHERE f = ? AND g = ? AND h = ? AND i IN (?,?,?) AND (j = ? OR (k = ? AND true)) " +
+		"GROUP BY l HAVING m = n ORDER BY ? DESC, o ASC, p DESC LIMIT 12 OFFSET 13 " +
+		"FETCH FIRST ? ROWS ONLY"
 	assert.Equal(t, expectedSql, sql)
 
 	expectedArgs := []interface{}{0, 1, 2, 3, 100, 101, 102, 103, 4, 5, 6, 7, 8, 9, 10, 11, 1, 14}
@@ -145,7 +144,6 @@ func TestSelectBuilderNoRunner(t *testing.T) {
 }
 
 func TestSelectBuilderSimpleJoin(t *testing.T) {
-
 	expectedSql := "SELECT * FROM bar JOIN baz ON bar.foo = baz.foo"
 	expectedArgs := []interface{}(nil)
 
@@ -159,7 +157,6 @@ func TestSelectBuilderSimpleJoin(t *testing.T) {
 }
 
 func TestSelectBuilderParamJoin(t *testing.T) {
-
 	expectedSql := "SELECT * FROM bar JOIN baz ON bar.foo = baz.foo AND baz.foo = ?"
 	expectedArgs := []interface{}{42}
 
@@ -173,7 +170,6 @@ func TestSelectBuilderParamJoin(t *testing.T) {
 }
 
 func TestSelectBuilderNestedSelectJoin(t *testing.T) {
-
 	expectedSql := "SELECT * FROM bar JOIN ( SELECT * FROM baz WHERE foo = ? ) r ON bar.foo = r.foo"
 	expectedArgs := []interface{}{42}
 
@@ -378,7 +374,6 @@ func ExampleSelectBuilder_Columns_order() {
 }
 
 func ExampleSelectBuilder_Scan() {
-
 	var db *sql.DB
 
 	query := Select("id", "created", "first_name").From("users")
@@ -395,7 +390,6 @@ func ExampleSelectBuilder_Scan() {
 }
 
 func ExampleSelectBuilder_ScanContext() {
-
 	var db *sql.DB
 
 	query := Select("id", "created", "first_name").From("users")
@@ -412,7 +406,6 @@ func ExampleSelectBuilder_ScanContext() {
 }
 
 func ExampleSelectBuilder_RunWith() {
-
 	var db *sql.DB
 
 	query := Select("id", "created", "first_name").From("users").RunWith(db)
@@ -428,7 +421,6 @@ func ExampleSelectBuilder_RunWith() {
 }
 
 func ExampleSelectBuilder_ToSql() {
-
 	var db *sql.DB
 
 	query := Select("id", "created", "first_name").From("users")

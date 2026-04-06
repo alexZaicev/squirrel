@@ -10,12 +10,9 @@ import "github.com/Masterminds/squirrel"
 ```
 
 
-[![GoDoc](https://godoc.org/github.com/Masterminds/squirrel?status.png)](https://godoc.org/github.com/Masterminds/squirrel)
-[![Build Status](https://api.travis-ci.org/Masterminds/squirrel.svg?branch=master)](https://travis-ci.org/Masterminds/squirrel)
+[![Go Reference](https://pkg.go.dev/badge/github.com/Masterminds/squirrel.svg)](https://pkg.go.dev/github.com/Masterminds/squirrel)
 
-**Squirrel is not an ORM.** For an application of Squirrel, check out
-[structable, a table-struct mapper](https://github.com/Masterminds/structable)
-
+**Squirrel is not an ORM.**
 
 Squirrel helps you build SQL queries from composable parts:
 
@@ -119,10 +116,12 @@ SELECT * FROM nodes WHERE meta->'format' ?| array[$1,$2]
     ```
 
     ```sql
-    WHERE (col1 = 1 AND col2 = 2) OR (col1 = 3 AND col2 = 4)
+    (col1 = ? AND col2 = ? OR col1 = ? AND col2 = ?)
     ```
+    with args `[1 2 3 4]`
 
-    (which should produce the same query plan as the tuple version)
+    (which should produce the same query plan as the tuple version, since AND has
+    higher precedence than OR in SQL)
 
 * **Why doesn't `Eq{"mynumber": []uint8{1,2,3}}` turn into an `IN` query? ([#114](https://github.com/Masterminds/squirrel/issues/114))**
 
@@ -130,11 +129,250 @@ SELECT * FROM nodes WHERE meta->'format' ?| array[$1,$2]
 
 * **Some features are poorly documented!**
 
-    This isn't a frequent complaints section!
+    Hopefully not anymore! See the [Feature Reference](#feature-reference) below.
+    The tests can also be considered a part of the documentation; take a look at
+    those for ideas on how to express more complex queries.
 
-* **Some features are poorly documented?**
+## Feature Reference
 
-    Yes. The tests should be considered a part of the documentation; take a look at those for ideas on how to express more complex queries.
+### Statement Builders
+
+Squirrel provides builders for the four main SQL statement types plus `CASE`
+expressions and MySQL's `REPLACE`:
+
+```go
+// UPDATE
+sql, args, err := sq.Update("users").Set("name", "moe").Set("age", 13).
+    Where(sq.Eq{"id": 1}).ToSql()
+// UPDATE users SET name = ?, age = ? WHERE id = ?
+
+// DELETE
+sql, args, err := sq.Delete("users").Where(sq.Eq{"id": 1}).ToSql()
+// DELETE FROM users WHERE id = ?
+
+// CASE expression (usable inside SELECT columns, etc.)
+sql, args, err := sq.Case("status").
+    When("1", "'active'").
+    When("2", "'inactive'").
+    Else("'unknown'").ToSql()
+// CASE status WHEN 1 THEN 'active' WHEN 2 THEN 'inactive' ELSE 'unknown' END
+
+// REPLACE (MySQL-specific; same interface as Insert)
+sql, args, err := sq.Replace("users").Columns("name", "age").
+    Values("moe", 13).ToSql()
+// REPLACE INTO users (name,age) VALUES (?,?)
+```
+
+### WHERE Expressions
+
+Beyond `Eq`, Squirrel provides a rich set of expression helpers:
+
+```go
+sq.NotEq{"id": 1}          // id <> ?
+sq.Lt{"age": 18}            // age < ?
+sq.LtOrEq{"age": 18}        // age <= ?
+sq.Gt{"age": 18}            // age > ?
+sq.GtOrEq{"age": 18}        // age >= ?
+sq.Like{"name": "%moe%"}    // name LIKE ?
+sq.NotLike{"name": "%moe%"} // name NOT LIKE ?
+sq.ILike{"name": "sq%"}     // name ILIKE ?  (PostgreSQL)
+sq.NotILike{"name": "sq%"}  // name NOT ILIKE ?
+```
+
+Combine expressions with `And` / `Or`:
+
+```go
+sq.And{sq.Gt{"age": 18}, sq.Eq{"active": true}}
+// (age > ? AND active = ?)
+
+sq.Or{sq.Eq{"col": 1}, sq.Eq{"col": 2}}
+// (col = ? OR col = ?)
+```
+
+Use `Expr` for arbitrary SQL fragments:
+
+```go
+sq.Expr("FROM_UNIXTIME(?)", ts)
+```
+
+Use `ConcatExpr` to build expressions by concatenating strings and other `Sqlizer` values:
+
+```go
+name_expr := sq.Expr("CONCAT(?, ' ', ?)", firstName, lastName)
+sq.ConcatExpr("COALESCE(full_name,", name_expr, ")")
+```
+
+### Placeholder Formats
+
+Four placeholder formats are built in:
+
+```go
+sq.Question // ?           (default — MySQL, SQLite)
+sq.Dollar   // $1, $2, ... (PostgreSQL)
+sq.Colon    // :1, :2, ... (Oracle)
+sq.AtP      // @p1, @p2, ... (SQL Server)
+```
+
+Set a format on any builder or on `StatementBuilder`:
+
+```go
+psql := sq.StatementBuilder.PlaceholderFormat(sq.Dollar)
+```
+
+The `Placeholders` helper generates a comma-separated list of `?` markers:
+
+```go
+sq.Placeholders(3) // "?,?,?"
+```
+
+### SELECT Clauses
+
+`SelectBuilder` supports the full range of SELECT clauses:
+
+```go
+sq.Select("department", "COUNT(*) as cnt").
+    Distinct().                          // SELECT DISTINCT ...
+    From("users").
+    Join("emails USING (email_id)").     // also LeftJoin, RightJoin, InnerJoin, CrossJoin
+    Where(sq.Gt{"age": 18}).
+    GroupBy("department").
+    Having("COUNT(*) > ?", 5).
+    OrderBy("cnt DESC").
+    Limit(10).
+    Offset(20).
+    ToSql()
+// SELECT DISTINCT department, COUNT(*) as cnt FROM users
+//   JOIN emails USING (email_id) WHERE age > ?
+//   GROUP BY department HAVING COUNT(*) > ?
+//   ORDER BY cnt DESC LIMIT 10 OFFSET 20
+```
+
+Remove clauses that were previously set:
+
+```go
+base := sq.Select("*").From("users").Limit(10).Offset(20)
+
+// Remove limit and offset for a count query
+countQuery := base.RemoveColumns().RemoveLimit().RemoveOffset().
+    Column("COUNT(*)")
+```
+
+### Subqueries
+
+Use `FromSelect` to nest a SELECT in the FROM clause:
+
+```go
+sub := sq.Select("id").From("other_table").Where(sq.Gt{"age": 18})
+sql, args, err := sq.Select("*").FromSelect(sub, "subquery").ToSql()
+// SELECT * FROM (SELECT id FROM other_table WHERE age > ?) AS subquery
+```
+
+### INSERT ... SELECT
+
+Insert rows from a SELECT query instead of literal values:
+
+```go
+sub := sq.Select("name", "age").From("other_users").Where(sq.Gt{"age": 18})
+sql, args, err := sq.Insert("users").Columns("name", "age").Select(sub).ToSql()
+// INSERT INTO users (name,age) SELECT name, age FROM other_users WHERE age > ?
+```
+
+### SetMap
+
+Set columns and values from a map (available on both `InsertBuilder` and `UpdateBuilder`):
+
+```go
+// Insert
+sq.Insert("users").SetMap(map[string]interface{}{
+    "name": "moe",
+    "age":  13,
+}).ToSql()
+// INSERT INTO users (age,name) VALUES (?,?)   -- columns sorted alphabetically
+
+// Update
+sq.Update("users").SetMap(map[string]interface{}{
+    "name": "moe",
+    "age":  13,
+}).Where(sq.Eq{"id": 1}).ToSql()
+// UPDATE users SET age = ?, name = ? WHERE id = ?
+```
+
+### INSERT Options
+
+Add keywords before the INTO clause (e.g. MySQL's `INSERT IGNORE`):
+
+```go
+sq.Insert("users").Options("IGNORE").Columns("name").Values("moe").ToSql()
+// INSERT IGNORE INTO users (name) VALUES (?)
+```
+
+### UPDATE ... FROM (PostgreSQL)
+
+Use `From` or `FromSelect` on an `UpdateBuilder` for PostgreSQL-style joins:
+
+```go
+sq.Update("users").Set("name", "moe").
+    From("accounts").
+    Where("users.account_id = accounts.id").
+    ToSql()
+// UPDATE users SET name = ? FROM accounts WHERE users.account_id = accounts.id
+```
+
+### Prefix and Suffix
+
+Add arbitrary SQL before or after the main statement:
+
+```go
+sq.Select("*").From("users").
+    Prefix("/* admin query */").
+    Suffix("FOR UPDATE").
+    Where(sq.Eq{"id": 1}).ToSql()
+// /* admin query */ SELECT * FROM users WHERE id = ? FOR UPDATE
+```
+
+### Column Aliasing
+
+Use `Alias` to wrap complex expressions with an `AS` alias:
+
+```go
+caseExpr := sq.Case().When(sq.Eq{"active": true}, "1").Else("0")
+sq.Select("name").Column(sq.Alias(caseExpr, "is_active")).From("users")
+```
+
+### MustSql
+
+All builders provide `MustSql()` which panics on error instead of returning it — useful in tests:
+
+```go
+sql, args := sq.Select("*").From("users").MustSql()
+```
+
+### Context-Aware Execution
+
+All builders support context-aware variants for query execution:
+
+```go
+rows, err := sq.Select("*").From("users").
+    RunWith(db).
+    QueryContext(ctx)
+
+result, err := sq.Update("users").Set("name", "moe").
+    Where(sq.Eq{"id": 1}).
+    RunWith(db).
+    ExecContext(ctx)
+```
+
+### Debugging
+
+`DebugSqlizer` inlines arguments into the SQL string for display purposes.
+**Never execute the output** — it is not safe against SQL injection:
+
+```go
+fmt.Println(sq.DebugSqlizer(
+    sq.Select("*").From("users").Where(sq.Eq{"name": "moe"}),
+))
+// SELECT * FROM users WHERE name = 'moe'
+```
 
 ## License
 

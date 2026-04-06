@@ -51,8 +51,10 @@ func (s *DBStub) QueryRow(query string, args ...interface{}) RowScanner {
 	return &Row{RowScanner: &RowStub{}}
 }
 
-var sqlizer = Select("test")
-var sqlStr = "SELECT test"
+var (
+	sqlizer = Select("test")
+	sqlStr  = "SELECT test"
+)
 
 func TestExecWith(t *testing.T) {
 	db := &DBStub{}
@@ -86,8 +88,10 @@ func TestWithToSqlErr(t *testing.T) {
 	assert.Error(t, err)
 }
 
-var testDebugUpdateSQL = Update("table").SetMap(Eq{"x": 1, "y": "val"})
-var expectedDebugUpateSQL = "UPDATE table SET x = '1', y = 'val'"
+var (
+	testDebugUpdateSQL    = Update("table").SetMap(Eq{"x": 1, "y": "val"})
+	expectedDebugUpateSQL = "UPDATE table SET x = '1', y = 'val'"
+)
 
 func TestDebugSqlizerUpdateColon(t *testing.T) {
 	testDebugUpdateSQL.PlaceholderFormat(Colon)
@@ -135,8 +139,10 @@ func TestDebugSqlizerDeleteQuestion(t *testing.T) {
 	assert.Equal(t, expectedDebugDeleteSQL, DebugSqlizer(testDebugDeleteSQL))
 }
 
-var testDebugInsertSQL = Insert("table").Values(1, "test")
-var expectedDebugInsertSQL = "INSERT INTO table VALUES ('1','test')"
+var (
+	testDebugInsertSQL     = Insert("table").Values(1, "test")
+	expectedDebugInsertSQL = "INSERT INTO table VALUES ('1','test')"
+)
 
 func TestDebugSqlizerInsertColon(t *testing.T) {
 	testDebugInsertSQL.PlaceholderFormat(Colon)

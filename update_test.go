@@ -24,15 +24,14 @@ func TestUpdateBuilderToSql(t *testing.T) {
 	sql, args, err := b.ToSql()
 	assert.NoError(t, err)
 
-	expectedSql :=
-		"WITH prefix AS ? " +
-			"UPDATE a SET b = ? + 1, c = ?, " +
-			"c1 = CASE status WHEN 1 THEN 2 WHEN 2 THEN 1 END, " +
-			"c2 = CASE WHEN a = 2 THEN ? WHEN a = 3 THEN ? END, " +
-			"c3 = (SELECT a FROM b) " +
-			"WHERE d = ? " +
-			"ORDER BY e LIMIT 4 OFFSET 5 " +
-			"RETURNING ?"
+	expectedSql := "WITH prefix AS ? " +
+		"UPDATE a SET b = ? + 1, c = ?, " +
+		"c1 = CASE status WHEN 1 THEN 2 WHEN 2 THEN 1 END, " +
+		"c2 = CASE WHEN a = 2 THEN ? WHEN a = 3 THEN ? END, " +
+		"c3 = (SELECT a FROM b) " +
+		"WHERE d = ? " +
+		"ORDER BY e LIMIT 4 OFFSET 5 " +
+		"RETURNING ?"
 	assert.Equal(t, expectedSql, sql)
 
 	expectedArgs := []interface{}{0, 1, 2, "foo", "bar", 3, 6}
@@ -98,10 +97,9 @@ func TestUpdateBuilderFromSelect(t *testing.T) {
 		Where("employees.account_id = subquery.id").ToSql()
 	assert.NoError(t, err)
 
-	expectedSql :=
-		"UPDATE employees " +
-			"SET sales_count = ? " +
-			"FROM (SELECT id FROM accounts WHERE accounts.name = ?) AS subquery " +
-			"WHERE employees.account_id = subquery.id"
+	expectedSql := "UPDATE employees " +
+		"SET sales_count = ? " +
+		"FROM (SELECT id FROM accounts WHERE accounts.name = ?) AS subquery " +
+		"WHERE employees.account_id = subquery.id"
 	assert.Equal(t, expectedSql, sql)
 }

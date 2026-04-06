@@ -266,7 +266,6 @@ func TestNilPointer(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Empty(t, args)
 	assert.Equal(t, "id IS NOT NULL", sql)
-
 }
 
 func TestNotNilPointer(t *testing.T) {

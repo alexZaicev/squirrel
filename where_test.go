@@ -1,9 +1,8 @@
 package squirrel
 
 import (
-	"testing"
-
 	"bytes"
+	"testing"
 
 	"github.com/stretchr/testify/assert"
 )

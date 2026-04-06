@@ -1,0 +1,80 @@
+name: CI
+
+on:
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Run golangci-lint
+        uses: golangci/golangci-lint-action@v7
+        with:
+          version: latest
+          args: --config .golangci.yaml ./...
+
+  unit-tests:
+    name: Unit Tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Run unit tests
+        run: go test -race -count=1 -cover -coverprofile=coverage.out ./...
+
+      - name: Print coverage
+        run: |
+          go tool cover -func=coverage.out | grep total: | awk '{print $3}'
+
+  integration-tests:
+    name: Integration Tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: integration/go.mod
+
+      - name: Start databases
+        working-directory: integration
+        run: docker compose up -d --wait
+
+      - name: Run integration tests (SQLite)
+        working-directory: integration
+        run: go test -race -count=1 -v -args -driver sqlite3
+
+      - name: Run integration tests (MySQL)
+        working-directory: integration
+        run: go test -race -count=1 -v -args -driver mysql -dataSource 'root@tcp(localhost:3306)/squirrel'
+
+      - name: Run integration tests (PostgreSQL)
+        working-directory: integration
+        run: go test -race -count=1 -v -args -driver postgres -dataSource 'postgres://postgres:postgres@localhost:5432/squirrel?sslmode=disable'
+
+      - name: Stop databases
+        if: always()
+        working-directory: integration
+        run: docker compose down -v

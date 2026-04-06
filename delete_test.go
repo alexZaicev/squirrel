@@ -19,10 +19,9 @@ func TestDeleteBuilderToSql(t *testing.T) {
 	sql, args, err := b.ToSql()
 	assert.NoError(t, err)
 
-	expectedSql :=
-		"WITH prefix AS ? " +
-			"DELETE FROM a WHERE b = ? ORDER BY c LIMIT 2 OFFSET 3 " +
-			"RETURNING ?"
+	expectedSql := "WITH prefix AS ? " +
+		"DELETE FROM a WHERE b = ? ORDER BY c LIMIT 2 OFFSET 3 " +
+		"RETURNING ?"
 	assert.Equal(t, expectedSql, sql)
 
 	expectedArgs := []interface{}{0, 1, 4}

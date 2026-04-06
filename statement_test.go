@@ -32,7 +32,6 @@ func TestRunWithDB(t *testing.T) {
 		builder.GetStruct(Update("t").RunWith(db))
 		builder.GetStruct(Delete("t").RunWith(db))
 	}, "RunWith(*sql.DB) should not panic")
-
 }
 
 func TestRunWithTx(t *testing.T) {
@@ -64,7 +63,6 @@ func TestRunWithBaseRunner(t *testing.T) {
 func TestRunWithBaseRunnerQueryRowError(t *testing.T) {
 	sb := StatementBuilder.RunWith(fakeBaseRunner{})
 	assert.Error(t, RunnerNotQueryRunner, sb.Select("test").QueryRow().Scan(nil))
-
 }
 
 func TestStatementBuilderWhere(t *testing.T) {
