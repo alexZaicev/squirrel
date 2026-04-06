@@ -46,11 +46,11 @@ func TestSelectBuilderToSql(t *testing.T) {
 		"FROM e " +
 		"CROSS JOIN j1 JOIN j2 LEFT JOIN j3 RIGHT JOIN j4 INNER JOIN j5 CROSS JOIN j6 " +
 		"WHERE f = ? AND g = ? AND h = ? AND i IN (?,?,?) AND (j = ? OR (k = ? AND true)) " +
-		"GROUP BY l HAVING m = n ORDER BY ? DESC, o ASC, p DESC LIMIT 12 OFFSET 13 " +
+		"GROUP BY l HAVING m = n ORDER BY ? DESC, o ASC, p DESC LIMIT ? OFFSET ? " +
 		"FETCH FIRST ? ROWS ONLY"
 	assert.Equal(t, expectedSQL, sql)
 
-	expectedArgs := []any{0, 1, 2, 3, 100, 101, 102, 103, 4, 5, 6, 7, 8, 9, 10, 11, 1, 14}
+	expectedArgs := []any{0, 1, 2, 3, 100, 101, 102, 103, 4, 5, 6, 7, 8, 9, 10, 11, 1, uint64(12), uint64(13), 14}
 	assert.Equal(t, expectedArgs, args)
 }
 
@@ -425,4 +425,159 @@ func TestRemoveColumns(t *testing.T) {
 	sql, _, err := query.ToSQL()
 	assert.NoError(t, err)
 	assert.Equal(t, "SELECT name FROM users", sql)
+}
+
+func TestSelectBuilderParameterizedLimit(t *testing.T) {
+	sql, args, err := Select("*").From("users").Limit(10).ToSQL()
+	assert.NoError(t, err)
+	assert.Equal(t, "SELECT * FROM users LIMIT ?", sql)
+	assert.Equal(t, []any{uint64(10)}, args)
+}
+
+func TestSelectBuilderParameterizedOffset(t *testing.T) {
+	sql, args, err := Select("*").From("users").Offset(20).ToSQL()
+	assert.NoError(t, err)
+	assert.Equal(t, "SELECT * FROM users OFFSET ?", sql)
+	assert.Equal(t, []any{uint64(20)}, args)
+}
+
+func TestSelectBuilderParameterizedLimitOffset(t *testing.T) {
+	sql, args, err := Select("*").From("users").Limit(10).Offset(20).ToSQL()
+	assert.NoError(t, err)
+	assert.Equal(t, "SELECT * FROM users LIMIT ? OFFSET ?", sql)
+	assert.Equal(t, []any{uint64(10), uint64(20)}, args)
+}
+
+func TestSelectBuilderParameterizedLimitZero(t *testing.T) {
+	sql, args, err := Select("*").From("users").Limit(0).ToSQL()
+	assert.NoError(t, err)
+	assert.Equal(t, "SELECT * FROM users LIMIT ?", sql)
+	assert.Equal(t, []any{uint64(0)}, args)
+}
+
+func TestSelectBuilderParameterizedOffsetZero(t *testing.T) {
+	sql, args, err := Select("*").From("users").Offset(0).ToSQL()
+	assert.NoError(t, err)
+	assert.Equal(t, "SELECT * FROM users OFFSET ?", sql)
+	assert.Equal(t, []any{uint64(0)}, args)
+}
+
+func TestSelectBuilderParameterizedLimitWithWhere(t *testing.T) {
+	sql, args, err := Select("*").From("users").
+		Where("active = ?", true).
+		Limit(5).
+		ToSQL()
+	assert.NoError(t, err)
+	assert.Equal(t, "SELECT * FROM users WHERE active = ? LIMIT ?", sql)
+	assert.Equal(t, []any{true, uint64(5)}, args)
+}
+
+func TestSelectBuilderParameterizedLimitOffsetDollar(t *testing.T) {
+	sql, args, err := Select("*").From("users").
+		Where("id > ?", 100).
+		Limit(10).
+		Offset(20).
+		PlaceholderFormat(Dollar).
+		ToSQL()
+	assert.NoError(t, err)
+	assert.Equal(t, "SELECT * FROM users WHERE id > $1 LIMIT $2 OFFSET $3", sql)
+	assert.Equal(t, []any{100, uint64(10), uint64(20)}, args)
+}
+
+func TestSelectBuilderParameterizedLimitOffsetColon(t *testing.T) {
+	sql, args, err := Select("*").From("users").
+		Where("id > ?", 100).
+		Limit(10).
+		Offset(20).
+		PlaceholderFormat(Colon).
+		ToSQL()
+	assert.NoError(t, err)
+	assert.Equal(t, "SELECT * FROM users WHERE id > :1 LIMIT :2 OFFSET :3", sql)
+	assert.Equal(t, []any{100, uint64(10), uint64(20)}, args)
+}
+
+func TestSelectBuilderParameterizedLimitOffsetAtP(t *testing.T) {
+	sql, args, err := Select("*").From("users").
+		Where("id > ?", 100).
+		Limit(10).
+		Offset(20).
+		PlaceholderFormat(AtP).
+		ToSQL()
+	assert.NoError(t, err)
+	assert.Equal(t, "SELECT * FROM users WHERE id > @p1 LIMIT @p2 OFFSET @p3", sql)
+	assert.Equal(t, []any{100, uint64(10), uint64(20)}, args)
+}
+
+func TestSelectBuilderLimitOverwrite(t *testing.T) {
+	// Last Limit call wins
+	sql, args, err := Select("*").From("users").Limit(10).Limit(20).ToSQL()
+	assert.NoError(t, err)
+	assert.Equal(t, "SELECT * FROM users LIMIT ?", sql)
+	assert.Equal(t, []any{uint64(20)}, args)
+}
+
+func TestSelectBuilderParameterizedLimitWithSuffix(t *testing.T) {
+	sql, args, err := Select("*").From("users").
+		Limit(10).
+		Offset(5).
+		Suffix("FOR UPDATE").
+		ToSQL()
+	assert.NoError(t, err)
+	assert.Equal(t, "SELECT * FROM users LIMIT ? OFFSET ? FOR UPDATE", sql)
+	assert.Equal(t, []any{uint64(10), uint64(5)}, args)
+}
+
+func TestSelectBuilderNoLimitNoOffset(t *testing.T) {
+	sql, args, err := Select("*").From("users").ToSQL()
+	assert.NoError(t, err)
+	assert.Equal(t, "SELECT * FROM users", sql)
+	assert.Nil(t, args)
+}
+
+func TestSelectBuilderParameterizedLimitInSubquery(t *testing.T) {
+	// Subquery with LIMIT should produce parameterized args as well.
+	// FromSelect resets inner placeholder to Question, so the inner LIMIT ?
+	// gets renumbered by the outer Dollar format.
+	subQ := Select("id").From("users").Limit(5)
+	sql, args, err := Select("*").FromSelect(subQ, "sub").
+		Limit(10).
+		PlaceholderFormat(Dollar).
+		ToSQL()
+	assert.NoError(t, err)
+	assert.Equal(t, "SELECT * FROM (SELECT id FROM users LIMIT $1) AS sub LIMIT $2", sql)
+	assert.Equal(t, []any{uint64(5), uint64(10)}, args)
+}
+
+func TestSelectBuilderRemoveLimitThenReAdd(t *testing.T) {
+	sql, args, err := Select("*").From("users").Limit(10).RemoveLimit().Limit(20).ToSQL()
+	assert.NoError(t, err)
+	assert.Equal(t, "SELECT * FROM users LIMIT ?", sql)
+	assert.Equal(t, []any{uint64(20)}, args)
+}
+
+func TestSelectBuilderRemoveOffsetThenReAdd(t *testing.T) {
+	sql, args, err := Select("*").From("users").Offset(10).RemoveOffset().Offset(20).ToSQL()
+	assert.NoError(t, err)
+	assert.Equal(t, "SELECT * FROM users OFFSET ?", sql)
+	assert.Equal(t, []any{uint64(20)}, args)
+}
+
+func TestSelectBuilderParameterizedLimitPreparedStatementReuse(t *testing.T) {
+	// Key benefit: the SQL string is the same for different limit/offset values,
+	// enabling prepared statement caching.
+	b1 := Select("*").From("users").Limit(10).Offset(0)
+	b2 := Select("*").From("users").Limit(20).Offset(10)
+
+	sql1, args1, err := b1.ToSQL()
+	assert.NoError(t, err)
+	sql2, args2, err := b2.ToSQL()
+	assert.NoError(t, err)
+
+	// SQL strings are identical — same prepared statement can be reused
+	assert.Equal(t, sql1, sql2)
+	assert.Equal(t, "SELECT * FROM users LIMIT ? OFFSET ?", sql1)
+
+	// Only the args differ
+	assert.Equal(t, []any{uint64(10), uint64(0)}, args1)
+	assert.Equal(t, []any{uint64(20), uint64(10)}, args2)
 }

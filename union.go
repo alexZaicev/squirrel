@@ -21,8 +21,8 @@ type unionData struct {
 	Prefixes          []Sqlizer
 	Parts             []unionPart
 	OrderByParts      []Sqlizer
-	Limit             string
-	Offset            string
+	Limit             *uint64
+	Offset            *uint64
 	Suffixes          []Sqlizer
 }
 
@@ -104,14 +104,14 @@ func (d *unionData) toSQLRaw() (sqlStr string, args []any, err error) {
 		}
 	}
 
-	if len(d.Limit) > 0 {
-		sql.WriteString(" LIMIT ")
-		sql.WriteString(d.Limit)
+	if d.Limit != nil {
+		sql.WriteString(" LIMIT ?")
+		args = append(args, *d.Limit)
 	}
 
-	if len(d.Offset) > 0 {
-		sql.WriteString(" OFFSET ")
-		sql.WriteString(d.Offset)
+	if d.Offset != nil {
+		sql.WriteString(" OFFSET ?")
+		args = append(args, *d.Offset)
 	}
 
 	if len(d.Suffixes) > 0 {
@@ -268,7 +268,7 @@ func (b UnionBuilder) OrderBy(orderBys ...string) UnionBuilder {
 
 // Limit sets a LIMIT clause on the combined result.
 func (b UnionBuilder) Limit(limit uint64) UnionBuilder {
-	return builder.Set(b, "Limit", fmt.Sprintf("%d", limit)).(UnionBuilder)
+	return builder.Set(b, "Limit", &limit).(UnionBuilder)
 }
 
 // RemoveLimit removes the LIMIT clause.
@@ -278,7 +278,7 @@ func (b UnionBuilder) RemoveLimit() UnionBuilder {
 
 // Offset sets an OFFSET clause on the combined result.
 func (b UnionBuilder) Offset(offset uint64) UnionBuilder {
-	return builder.Set(b, "Offset", fmt.Sprintf("%d", offset)).(UnionBuilder)
+	return builder.Set(b, "Offset", &offset).(UnionBuilder)
 }
 
 // RemoveOffset removes the OFFSET clause.

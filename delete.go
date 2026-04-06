@@ -16,8 +16,8 @@ type deleteData struct {
 	From              string
 	WhereParts        []Sqlizer
 	OrderBys          []string
-	Limit             string
-	Offset            string
+	Limit             *uint64
+	Offset            *uint64
 	Returning         []string
 	Suffixes          []Sqlizer
 }
@@ -72,14 +72,14 @@ func (d *deleteData) toSQLRaw() (sqlStr string, args []any, err error) {
 		sql.WriteString(strings.Join(d.OrderBys, ", "))
 	}
 
-	if len(d.Limit) > 0 {
-		sql.WriteString(" LIMIT ")
-		sql.WriteString(d.Limit)
+	if d.Limit != nil {
+		sql.WriteString(" LIMIT ?")
+		args = append(args, *d.Limit)
 	}
 
-	if len(d.Offset) > 0 {
-		sql.WriteString(" OFFSET ")
-		sql.WriteString(d.Offset)
+	if d.Offset != nil {
+		sql.WriteString(" OFFSET ?")
+		args = append(args, *d.Offset)
 	}
 
 	if len(d.Returning) > 0 {
@@ -181,12 +181,12 @@ func (b DeleteBuilder) OrderBy(orderBys ...string) DeleteBuilder {
 
 // Limit sets a LIMIT clause on the query.
 func (b DeleteBuilder) Limit(limit uint64) DeleteBuilder {
-	return builder.Set(b, "Limit", fmt.Sprintf("%d", limit)).(DeleteBuilder)
+	return builder.Set(b, "Limit", &limit).(DeleteBuilder)
 }
 
 // Offset sets a OFFSET clause on the query.
 func (b DeleteBuilder) Offset(offset uint64) DeleteBuilder {
-	return builder.Set(b, "Offset", fmt.Sprintf("%d", offset)).(DeleteBuilder)
+	return builder.Set(b, "Offset", &offset).(DeleteBuilder)
 }
 
 // Suffix adds an expression to the end of the query

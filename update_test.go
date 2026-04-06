@@ -30,11 +30,11 @@ func TestUpdateBuilderToSql(t *testing.T) {
 		"c2 = CASE WHEN a = 2 THEN ? WHEN a = 3 THEN ? END, " +
 		"c3 = (SELECT a FROM b) " +
 		"WHERE d = ? " +
-		"ORDER BY e LIMIT 4 OFFSET 5 " +
+		"ORDER BY e LIMIT ? OFFSET ? " +
 		"RETURNING ?"
 	assert.Equal(t, expectedSQL, sql)
 
-	expectedArgs := []any{0, 1, 2, "foo", "bar", 3, 6}
+	expectedArgs := []any{0, 1, 2, "foo", "bar", 3, uint64(4), uint64(5), 6}
 	assert.Equal(t, expectedArgs, args)
 }
 
@@ -169,4 +169,59 @@ func TestUpdateBuilderReturningWithSuffix(t *testing.T) {
 
 	expectedArgs := []any{"John", 1}
 	assert.Equal(t, expectedArgs, args)
+}
+
+func TestUpdateBuilderParameterizedLimit(t *testing.T) {
+	sql, args, err := Update("users").Set("name", "Alice").Limit(10).ToSQL()
+	assert.NoError(t, err)
+	assert.Equal(t, "UPDATE users SET name = ? LIMIT ?", sql)
+	assert.Equal(t, []any{"Alice", uint64(10)}, args)
+}
+
+func TestUpdateBuilderParameterizedOffset(t *testing.T) {
+	sql, args, err := Update("users").Set("name", "Alice").Offset(5).ToSQL()
+	assert.NoError(t, err)
+	assert.Equal(t, "UPDATE users SET name = ? OFFSET ?", sql)
+	assert.Equal(t, []any{"Alice", uint64(5)}, args)
+}
+
+func TestUpdateBuilderParameterizedLimitOffset(t *testing.T) {
+	sql, args, err := Update("users").Set("name", "Alice").Limit(10).Offset(5).ToSQL()
+	assert.NoError(t, err)
+	assert.Equal(t, "UPDATE users SET name = ? LIMIT ? OFFSET ?", sql)
+	assert.Equal(t, []any{"Alice", uint64(10), uint64(5)}, args)
+}
+
+func TestUpdateBuilderParameterizedLimitZero(t *testing.T) {
+	sql, args, err := Update("users").Set("name", "Alice").Limit(0).ToSQL()
+	assert.NoError(t, err)
+	assert.Equal(t, "UPDATE users SET name = ? LIMIT ?", sql)
+	assert.Equal(t, []any{"Alice", uint64(0)}, args)
+}
+
+func TestUpdateBuilderParameterizedLimitDollar(t *testing.T) {
+	sql, args, err := Update("users").
+		Set("name", "Alice").
+		Where("id = ?", 1).
+		Limit(10).
+		Offset(5).
+		PlaceholderFormat(Dollar).
+		ToSQL()
+	assert.NoError(t, err)
+	assert.Equal(t, "UPDATE users SET name = $1 WHERE id = $2 LIMIT $3 OFFSET $4", sql)
+	assert.Equal(t, []any{"Alice", 1, uint64(10), uint64(5)}, args)
+}
+
+func TestUpdateBuilderParameterizedLimitPreparedStatementReuse(t *testing.T) {
+	b1 := Update("users").Set("name", "Alice").Limit(10)
+	b2 := Update("users").Set("name", "Alice").Limit(20)
+
+	sql1, _, err := b1.ToSQL()
+	assert.NoError(t, err)
+	sql2, _, err := b2.ToSQL()
+	assert.NoError(t, err)
+
+	// Same SQL string for different limit values
+	assert.Equal(t, sql1, sql2)
+	assert.Equal(t, "UPDATE users SET name = ? LIMIT ?", sql1)
 }

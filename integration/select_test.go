@@ -304,6 +304,77 @@ func TestSelectLimitOffset(t *testing.T) {
 		// Assert
 		assert.Empty(t, names)
 	})
+
+	t.Run("ParameterizedLimitPlaceholderSQL", func(t *testing.T) {
+		// Verify that the generated SQL uses placeholders for LIMIT/OFFSET.
+		q := sb.Select("name").From("sq_items").OrderBy("id").Limit(3).Offset(1)
+
+		sqlStr, args, err := q.ToSQL()
+		require.NoError(t, err)
+
+		if isPostgres() {
+			assert.Contains(t, sqlStr, "LIMIT $")
+			assert.Contains(t, sqlStr, "OFFSET $")
+		} else {
+			assert.Contains(t, sqlStr, "LIMIT ?")
+			assert.Contains(t, sqlStr, "OFFSET ?")
+		}
+
+		// LIMIT and OFFSET values appear as bound args
+		assert.Contains(t, args, uint64(3))
+		assert.Contains(t, args, uint64(1))
+	})
+
+	t.Run("ParameterizedLimitWithWhere", func(t *testing.T) {
+		// LIMIT/OFFSET args don't interfere with WHERE args
+		q := sb.Select("name").From("sq_items").
+			Where(sqrl.Eq{"category": "fruit"}).
+			OrderBy("id").
+			Limit(1).
+			Offset(0)
+
+		names := queryStrings(t, q)
+
+		assert.Equal(t, []string{"apple"}, names)
+	})
+
+	t.Run("ParameterizedLimitPreparedStatementReuse", func(t *testing.T) {
+		// The key benefit: SQL string is the same for different values,
+		// enabling prepared statement caching.
+		b1 := sb.Select("name").From("sq_items").OrderBy("id").Limit(2).Offset(0)
+		b2 := sb.Select("name").From("sq_items").OrderBy("id").Limit(2).Offset(2)
+
+		sql1, _, err := b1.ToSQL()
+		require.NoError(t, err)
+		sql2, _, err := b2.ToSQL()
+		require.NoError(t, err)
+
+		assert.Equal(t, sql1, sql2, "SQL strings should be identical for different limit/offset values")
+
+		names1 := queryStrings(t, b1)
+		names2 := queryStrings(t, b2)
+
+		assert.Equal(t, []string{"apple", "banana"}, names1)
+		assert.Equal(t, []string{"carrot", "donut"}, names2)
+	})
+
+	t.Run("ParameterizedLimitLargeValue", func(t *testing.T) {
+		// Large limit values work correctly with parameterized queries
+		q := sb.Select("name").From("sq_items").OrderBy("id").Limit(1000000)
+
+		names := queryStrings(t, q)
+
+		assert.Len(t, names, 6) // all 6 rows
+	})
+
+	t.Run("ParameterizedOffsetBeyondRows", func(t *testing.T) {
+		// Offset beyond the number of rows returns empty result
+		q := sb.Select("name").From("sq_items").OrderBy("id").Limit(100).Offset(100)
+
+		names := queryStrings(t, q)
+
+		assert.Empty(t, names)
+	})
 }
 
 // ---------------------------------------------------------------------------

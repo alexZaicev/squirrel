@@ -98,9 +98,9 @@ func TestUnionBuilderWithOrderByAndLimit(t *testing.T) {
 	assert.NoError(t, err)
 
 	expectedSQL := "SELECT id, name FROM users UNION SELECT id, name FROM admins " +
-		"ORDER BY name ASC LIMIT 10 OFFSET 5"
+		"ORDER BY name ASC LIMIT ? OFFSET ?"
 	assert.Equal(t, expectedSQL, sql)
-	assert.Nil(t, args)
+	assert.Equal(t, []any{uint64(10), uint64(5)}, args)
 }
 
 func TestUnionBuilderWithPrefixAndSuffix(t *testing.T) {
@@ -307,4 +307,89 @@ func TestStatementBuilderUnion(t *testing.T) {
 	sql, _, err := Union(q1, q2).ToSQL()
 	assert.NoError(t, err)
 	assert.Equal(t, "SELECT id FROM t1 UNION SELECT id FROM t2", sql)
+}
+
+func TestUnionBuilderParameterizedLimit(t *testing.T) {
+	q1 := Select("id").From("t1")
+	q2 := Select("id").From("t2")
+
+	sql, args, err := Union(q1, q2).Limit(10).ToSQL()
+	assert.NoError(t, err)
+	assert.Equal(t, "SELECT id FROM t1 UNION SELECT id FROM t2 LIMIT ?", sql)
+	assert.Equal(t, []any{uint64(10)}, args)
+}
+
+func TestUnionBuilderParameterizedOffset(t *testing.T) {
+	q1 := Select("id").From("t1")
+	q2 := Select("id").From("t2")
+
+	sql, args, err := Union(q1, q2).Offset(5).ToSQL()
+	assert.NoError(t, err)
+	assert.Equal(t, "SELECT id FROM t1 UNION SELECT id FROM t2 OFFSET ?", sql)
+	assert.Equal(t, []any{uint64(5)}, args)
+}
+
+func TestUnionBuilderParameterizedLimitOffset(t *testing.T) {
+	q1 := Select("id").From("t1")
+	q2 := Select("id").From("t2")
+
+	sql, args, err := Union(q1, q2).Limit(10).Offset(5).ToSQL()
+	assert.NoError(t, err)
+	assert.Equal(t, "SELECT id FROM t1 UNION SELECT id FROM t2 LIMIT ? OFFSET ?", sql)
+	assert.Equal(t, []any{uint64(10), uint64(5)}, args)
+}
+
+func TestUnionBuilderParameterizedLimitZero(t *testing.T) {
+	q1 := Select("id").From("t1")
+
+	sql, args, err := Union(q1).Limit(0).ToSQL()
+	assert.NoError(t, err)
+	assert.Equal(t, "SELECT id FROM t1 LIMIT ?", sql)
+	assert.Equal(t, []any{uint64(0)}, args)
+}
+
+func TestUnionBuilderParameterizedLimitDollar(t *testing.T) {
+	q1 := Select("id").From("t1").Where(Eq{"a": 1})
+	q2 := Select("id").From("t2").Where(Eq{"b": 2})
+
+	sql, args, err := Union(q1, q2).
+		Limit(10).
+		Offset(5).
+		PlaceholderFormat(Dollar).
+		ToSQL()
+	assert.NoError(t, err)
+	assert.Equal(t, "SELECT id FROM t1 WHERE a = $1 UNION SELECT id FROM t2 WHERE b = $2 LIMIT $3 OFFSET $4", sql)
+	assert.Equal(t, []any{1, 2, uint64(10), uint64(5)}, args)
+}
+
+func TestUnionBuilderParameterizedLimitPreparedStatementReuse(t *testing.T) {
+	q1 := Select("id").From("t1")
+	q2 := Select("id").From("t2")
+
+	b1 := Union(q1, q2).Limit(10).Offset(0)
+	b2 := Union(q1, q2).Limit(20).Offset(10)
+
+	sql1, args1, err := b1.ToSQL()
+	assert.NoError(t, err)
+	sql2, args2, err := b2.ToSQL()
+	assert.NoError(t, err)
+
+	// Same SQL string for different limit/offset values
+	assert.Equal(t, sql1, sql2)
+	assert.Equal(t, "SELECT id FROM t1 UNION SELECT id FROM t2 LIMIT ? OFFSET ?", sql1)
+
+	assert.Equal(t, []any{uint64(10), uint64(0)}, args1)
+	assert.Equal(t, []any{uint64(20), uint64(10)}, args2)
+}
+
+func TestUnionBuilderRemoveLimitOffset_Parameterized(t *testing.T) {
+	q1 := Select("id").From("t1")
+	q2 := Select("id").From("t2")
+
+	b := Union(q1, q2).Limit(10).Offset(5)
+
+	sql, args, err := b.RemoveLimit().RemoveOffset().ToSQL()
+	assert.NoError(t, err)
+	assert.Equal(t, "SELECT id FROM t1 UNION SELECT id FROM t2", sql)
+	assert.Nil(t, args)
 }

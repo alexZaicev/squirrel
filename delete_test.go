@@ -20,11 +20,11 @@ func TestDeleteBuilderToSql(t *testing.T) {
 	assert.NoError(t, err)
 
 	expectedSQL := "WITH prefix AS ? " +
-		"DELETE FROM a WHERE b = ? ORDER BY c LIMIT 2 OFFSET 3 " +
+		"DELETE FROM a WHERE b = ? ORDER BY c LIMIT ? OFFSET ? " +
 		"RETURNING ?"
 	assert.Equal(t, expectedSQL, sql)
 
-	expectedArgs := []any{0, 1, 4}
+	expectedArgs := []any{0, 1, uint64(2), uint64(3), 4}
 	assert.Equal(t, expectedArgs, args)
 }
 
@@ -154,4 +154,58 @@ func TestDeleteBuilderReturningWithQuery(t *testing.T) {
 	_, err := b.Query()
 	assert.NoError(t, err)
 	assert.Equal(t, expectedSQL, db.LastQuerySQL)
+}
+
+func TestDeleteBuilderParameterizedLimit(t *testing.T) {
+	sql, args, err := Delete("logs").Where("created < ?", "2024-01-01").Limit(100).ToSQL()
+	assert.NoError(t, err)
+	assert.Equal(t, "DELETE FROM logs WHERE created < ? LIMIT ?", sql)
+	assert.Equal(t, []any{"2024-01-01", uint64(100)}, args)
+}
+
+func TestDeleteBuilderParameterizedOffset(t *testing.T) {
+	sql, args, err := Delete("logs").Offset(10).ToSQL()
+	assert.NoError(t, err)
+	assert.Equal(t, "DELETE FROM logs OFFSET ?", sql)
+	assert.Equal(t, []any{uint64(10)}, args)
+}
+
+func TestDeleteBuilderParameterizedLimitOffset(t *testing.T) {
+	sql, args, err := Delete("logs").Limit(50).Offset(10).ToSQL()
+	assert.NoError(t, err)
+	assert.Equal(t, "DELETE FROM logs LIMIT ? OFFSET ?", sql)
+	assert.Equal(t, []any{uint64(50), uint64(10)}, args)
+}
+
+func TestDeleteBuilderParameterizedLimitZero(t *testing.T) {
+	sql, args, err := Delete("logs").Limit(0).ToSQL()
+	assert.NoError(t, err)
+	assert.Equal(t, "DELETE FROM logs LIMIT ?", sql)
+	assert.Equal(t, []any{uint64(0)}, args)
+}
+
+func TestDeleteBuilderParameterizedLimitDollar(t *testing.T) {
+	sql, args, err := Delete("logs").
+		Where("active = ?", false).
+		Limit(10).
+		Offset(5).
+		PlaceholderFormat(Dollar).
+		ToSQL()
+	assert.NoError(t, err)
+	assert.Equal(t, "DELETE FROM logs WHERE active = $1 LIMIT $2 OFFSET $3", sql)
+	assert.Equal(t, []any{false, uint64(10), uint64(5)}, args)
+}
+
+func TestDeleteBuilderParameterizedLimitPreparedStatementReuse(t *testing.T) {
+	b1 := Delete("logs").Limit(100)
+	b2 := Delete("logs").Limit(200)
+
+	sql1, _, err := b1.ToSQL()
+	assert.NoError(t, err)
+	sql2, _, err := b2.ToSQL()
+	assert.NoError(t, err)
+
+	// Same SQL string for different limit values
+	assert.Equal(t, sql1, sql2)
+	assert.Equal(t, "DELETE FROM logs LIMIT ?", sql1)
 }
