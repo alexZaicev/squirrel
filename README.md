@@ -35,8 +35,8 @@ three_stooges := stooges.Limit(3)
 rows, err := three_stooges.RunWith(db).Query()
 
 // Behaves like:
-rows, err := db.Query("SELECT * FROM users WHERE username IN (?,?,?,?) LIMIT 3",
-                      "moe", "larry", "curly", "shemp")
+rows, err := db.Query("SELECT * FROM users WHERE username IN (?,?,?,?) LIMIT ?",
+                      "moe", "larry", "curly", "shemp", 3)
 ```
 
 Squirrel makes conditional query building a breeze:
@@ -256,7 +256,20 @@ sq.Select("department", "COUNT(*) as cnt").
 // SELECT DISTINCT department, COUNT(*) as cnt FROM users
 //   JOIN emails USING (email_id) WHERE age > ?
 //   GROUP BY department HAVING COUNT(*) > ?
-//   ORDER BY cnt DESC LIMIT 10 OFFSET 20
+//   ORDER BY cnt DESC LIMIT ? OFFSET ?
+// args: [18, 5, 10, 20]
+```
+
+`Limit` and `Offset` use parameterized placeholders (`LIMIT ?` / `OFFSET ?`) rather
+than formatting values directly into the SQL string. This means the query string is
+identical regardless of the limit/offset values, enabling prepared-statement caching
+and reuse:
+
+```go
+// Both produce the same SQL: "SELECT * FROM users LIMIT ? OFFSET ?"
+// Only the bound args differ.
+page1 := sq.Select("*").From("users").Limit(10).Offset(0)
+page2 := sq.Select("*").From("users").Limit(10).Offset(10)
 ```
 
 `FullJoin` adds a `FULL OUTER JOIN` clause:
@@ -364,7 +377,8 @@ Remove clauses that were previously set:
 ```go
 base := sq.Select("*").From("users").Limit(10).Offset(20)
 
-// Remove limit and offset for a count query
+// Remove limit and offset for a count query.
+// RemoveLimit/RemoveOffset remove the parameterized LIMIT/OFFSET clauses entirely.
 countQuery := base.RemoveColumns().RemoveLimit().RemoveOffset().
     Column("COUNT(*)")
 ```
@@ -427,11 +441,13 @@ sql, args, err = sq.Except(q1, q2).ToSql()
 // SELECT name FROM employees EXCEPT SELECT name FROM contractors
 ```
 
-Chain additional set operations and add `ORDER BY`, `LIMIT`, `OFFSET`:
+Chain additional set operations and add `ORDER BY`, `LIMIT`, `OFFSET` (all parameterized):
 
 ```go
 q3 := sq.Select("name").From("interns")
 sql, args, err := sq.Union(q1, q2).Union(q3).OrderBy("name").Limit(10).ToSql()
+// ... ORDER BY name LIMIT ?
+// args: [..., 10]
 ```
 
 ### Common Table Expressions (CTEs)

@@ -19,8 +19,8 @@ type updateData struct {
 	From              Sqlizer
 	WhereParts        []Sqlizer
 	OrderBys          []string
-	Limit             string
-	Offset            string
+	Limit             *uint64
+	Offset            *uint64
 	Returning         []string
 	Suffixes          []Sqlizer
 }
@@ -133,14 +133,14 @@ func (d *updateData) toSQLRaw() (sqlStr string, args []any, err error) {
 		sql.WriteString(strings.Join(d.OrderBys, ", "))
 	}
 
-	if len(d.Limit) > 0 {
-		sql.WriteString(" LIMIT ")
-		sql.WriteString(d.Limit)
+	if d.Limit != nil {
+		sql.WriteString(" LIMIT ?")
+		args = append(args, *d.Limit)
 	}
 
-	if len(d.Offset) > 0 {
-		sql.WriteString(" OFFSET ")
-		sql.WriteString(d.Offset)
+	if d.Offset != nil {
+		sql.WriteString(" OFFSET ?")
+		args = append(args, *d.Offset)
 	}
 
 	if len(d.Returning) > 0 {
@@ -290,12 +290,12 @@ func (b UpdateBuilder) OrderBy(orderBys ...string) UpdateBuilder {
 
 // Limit sets a LIMIT clause on the query.
 func (b UpdateBuilder) Limit(limit uint64) UpdateBuilder {
-	return builder.Set(b, "Limit", fmt.Sprintf("%d", limit)).(UpdateBuilder)
+	return builder.Set(b, "Limit", &limit).(UpdateBuilder)
 }
 
 // Offset sets a OFFSET clause on the query.
 func (b UpdateBuilder) Offset(offset uint64) UpdateBuilder {
-	return builder.Set(b, "Offset", fmt.Sprintf("%d", offset)).(UpdateBuilder)
+	return builder.Set(b, "Offset", &offset).(UpdateBuilder)
 }
 
 // Suffix adds an expression to the end of the query

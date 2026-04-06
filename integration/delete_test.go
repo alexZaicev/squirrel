@@ -299,11 +299,12 @@ func TestDeleteToSQL(t *testing.T) {
 		q := sqrl.Delete("items").OrderBy("id").Limit(5).Offset(10)
 
 		// Act
-		sqlStr, _, err := q.ToSQL()
+		sqlStr, args, err := q.ToSQL()
 
-		// Assert
+		// Assert — LIMIT and OFFSET are now parameterized
 		require.NoError(t, err)
-		assert.Equal(t, "DELETE FROM items ORDER BY id LIMIT 5 OFFSET 10", sqlStr)
+		assert.Equal(t, "DELETE FROM items ORDER BY id LIMIT ? OFFSET ?", sqlStr)
+		assert.Equal(t, []interface{}{uint64(5), uint64(10)}, args)
 	})
 }
 

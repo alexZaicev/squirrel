@@ -132,7 +132,7 @@ The `Placeholders(count int) string` function generates a comma-separated list o
 - `JoinUsing()`, `LeftJoinUsing()`, `RightJoinUsing()`, `InnerJoinUsing()`, `CrossJoinUsing()`, `FullJoinUsing()` — convenience for `JOIN table USING (col1, col2)`
 - `Where()`, `GroupBy()`, `Having()`
 - `OrderBy()`, `OrderByClause()` — simple or complex ORDER BY
-- `Limit()`, `RemoveLimit()`, `Offset()`, `RemoveOffset()`
+- `Limit()`, `RemoveLimit()`, `Offset()`, `RemoveOffset()` — parameterized (`LIMIT ?` / `OFFSET ?` with bound args)
 - `Scan()` — shortcut for `QueryRow().Scan()`
 
 **InsertBuilder** notable methods:
@@ -151,18 +151,18 @@ The `Placeholders(count int) string` function generates a comma-separated list o
 **UpdateBuilder** notable methods:
 - `Table()`, `Set()`, `SetMap()`
 - `From()`, `FromSelect()` — PostgreSQL-style `UPDATE ... FROM`
-- `Where()`, `OrderBy()`, `Limit()`, `Offset()`
+- `Where()`, `OrderBy()`, `Limit()`, `Offset()` — LIMIT/OFFSET are parameterized
 - `Returning()` — add `RETURNING` clause (PostgreSQL, SQLite 3.35+)
 
 **DeleteBuilder** notable methods:
-- `From()`, `Where()`, `OrderBy()`, `Limit()`, `Offset()`
+- `From()`, `Where()`, `OrderBy()`, `Limit()`, `Offset()` — LIMIT/OFFSET are parameterized
 - `Returning()` — add `RETURNING` clause (PostgreSQL, SQLite 3.35+)
 - `Query()` — useful with `RETURNING` clauses
 
 **UnionBuilder** notable methods:
 - `Union()`, `UnionAll()`, `Intersect()`, `Except()` — add set operations
 - `OrderBy()`, `OrderByClause()` — ORDER BY on the combined result
-- `Limit()`, `RemoveLimit()`, `Offset()`, `RemoveOffset()` — pagination on the combined result
+- `Limit()`, `RemoveLimit()`, `Offset()`, `RemoveOffset()` — parameterized pagination on the combined result
 - Package-level constructors: `Union()`, `UnionAll()`, `Intersect()`, `Except()`
 
 **CteBuilder** notable methods:
@@ -216,6 +216,7 @@ Do not add new dependencies without strong justification. This is a maintenance-
 - The `DebugSqlizer` function is for debugging only — its output is not guaranteed to be valid SQL and must never be used for execution.
 - Empty `Eq{}` evaluates to `(1=1)` (true) and empty `And{}` also evaluates to `(1=1)`. Empty `Or{}` evaluates to `(1=0)` (false).
 - `setRunWith` automatically wraps `StdSql` / `StdSqlCtx` implementations via `WrapStdSql` / `WrapStdSqlCtx` — callers don't need to wrap manually when using `RunWith`.
+- `Limit` and `Offset` are parameterized — they emit `LIMIT ?` / `OFFSET ?` with bound args (type `uint64`). The data struct fields are `*uint64` (nil means "not set", non-nil means "set", including zero). `RemoveLimit()`/`RemoveOffset()` reset to nil. This applies to all builders: `SelectBuilder`, `UpdateBuilder`, `DeleteBuilder`, `UnionBuilder`.
 
 ## Security considerations
 

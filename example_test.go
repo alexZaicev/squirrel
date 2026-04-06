@@ -272,13 +272,33 @@ func ExampleSelectBuilder_OrderBy() {
 }
 
 func ExampleSelectBuilder_Limit() {
-	sql, _, _ := sq.Select("id", "name").
+	sql, args, _ := sq.Select("id", "name").
 		From("users").
 		Limit(10).
 		Offset(20).
 		ToSQL()
 	fmt.Println(sql)
-	// Output: SELECT id, name FROM users LIMIT 10 OFFSET 20
+	fmt.Println(args)
+	// Output:
+	// SELECT id, name FROM users LIMIT ? OFFSET ?
+	// [10 20]
+}
+
+func ExampleSelectBuilder_Limit_dollar() {
+	// Parameterized LIMIT/OFFSET works with all placeholder formats,
+	// enabling prepared-statement reuse across different page sizes.
+	sql, args, _ := sq.Select("id", "name").
+		From("users").
+		Where("active = ?", true).
+		Limit(10).
+		Offset(20).
+		PlaceholderFormat(sq.Dollar).
+		ToSQL()
+	fmt.Println(sql)
+	fmt.Println(args)
+	// Output:
+	// SELECT id, name FROM users WHERE active = $1 LIMIT $2 OFFSET $3
+	// [true 10 20]
 }
 
 func ExampleSelectBuilder_RemoveColumns() {
@@ -546,8 +566,8 @@ func ExampleUpdateBuilder_OrderBy() {
 	fmt.Println(sql)
 	fmt.Println(args)
 	// Output:
-	// UPDATE users SET name = ? ORDER BY id LIMIT 10
-	// [Alice]
+	// UPDATE users SET name = ? ORDER BY id LIMIT ?
+	// [Alice 10]
 }
 
 func ExampleUpdateBuilder_Returning() {
@@ -588,8 +608,8 @@ func ExampleDeleteBuilder_OrderBy() {
 	fmt.Println(sql)
 	fmt.Println(args)
 	// Output:
-	// DELETE FROM logs WHERE created < ? ORDER BY created LIMIT 1000
-	// [2024-01-01]
+	// DELETE FROM logs WHERE created < ? ORDER BY created LIMIT ?
+	// [2024-01-01 1000]
 }
 
 func ExampleDeleteBuilder_Returning() {
@@ -700,13 +720,16 @@ func ExampleUnionBuilder_OrderBy() {
 	q1 := sq.Select("id", "name").From("t1")
 	q2 := sq.Select("id", "name").From("t2")
 
-	sql, _, _ := sq.Union(q1, q2).
+	sql, args, _ := sq.Union(q1, q2).
 		OrderBy("name").
 		Limit(10).
 		Offset(5).
 		ToSQL()
 	fmt.Println(sql)
-	// Output: SELECT id, name FROM t1 UNION SELECT id, name FROM t2 ORDER BY name LIMIT 10 OFFSET 5
+	fmt.Println(args)
+	// Output:
+	// SELECT id, name FROM t1 UNION SELECT id, name FROM t2 ORDER BY name LIMIT ? OFFSET ?
+	// [10 5]
 }
 
 // ---------------------------------------------------------------------------

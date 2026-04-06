@@ -140,8 +140,21 @@ Expr("EXISTS (?)", subQuery)
 
 **Files modified:** `select.go`, `select_test.go`, `join.go`, `join_test.go`, `example_test.go`, `integration/join_test.go`. Unit tests cover `FullJoin` with and without args, `FullJoinUsing` with single and multiple columns, `JoinExpr` with `JoinFull` type. Runnable `Example*` functions for godoc. Integration tests (skipped on MySQL) cover FULL OUTER JOIN preserving both sides, WHERE filtering, placeholder args in ON clause, FULL OUTER JOIN USING with unmatched rows, and Dollar placeholder correctness.
 
-### 1.11 Parameterized `LIMIT` / `OFFSET`
-`Limit` and `Offset` format the values as literal strings (`fmt.Sprintf("%d", limit)`) directly into SQL rather than using placeholders. This means the query string changes with different limit/offset values, defeating prepared-statement caching. Parameterized limits would allow statement reuse.
+### 1.11 ✅ Parameterized `LIMIT` / `OFFSET` — **DONE**
+~~`Limit` and `Offset` format the values as literal strings (`fmt.Sprintf("%d", limit)`) directly into SQL rather than using placeholders. This means the query string changes with different limit/offset values, defeating prepared-statement caching. Parameterized limits would allow statement reuse.~~
+
+**Implemented** (April 2026) by changing the `Limit` and `Offset` fields in all builder data structs (`selectData`, `updateData`, `deleteData`, `unionData`) from `string` to `*uint64`. The `toSQLRaw()` methods now emit `LIMIT ?` / `OFFSET ?` with the value as a bound argument, instead of formatting the value directly into the SQL string.
+
+**Key benefits:**
+- **Prepared-statement caching:** The SQL string is now identical regardless of limit/offset values (`SELECT * FROM users LIMIT ? OFFSET ?`), enabling database drivers and connection pools to reuse prepared statements across different page sizes.
+- **Consistent parameterization:** LIMIT/OFFSET values participate in placeholder numbering for all formats (`Question`, `Dollar`, `Colon`, `AtP`). For example, with Dollar: `SELECT * FROM users WHERE active = $1 LIMIT $2 OFFSET $3`.
+- **Backward compatible API:** The `Limit(uint64)` and `Offset(uint64)` method signatures are unchanged. `RemoveLimit()` and `RemoveOffset()` continue to work as before.
+- **Zero is a valid value:** `Limit(0)` emits `LIMIT ?` with arg `0` (previously emitted `LIMIT 0` as a literal). `nil` (no Limit called, or after RemoveLimit) omits the clause entirely.
+- **Subquery correctness:** Parameterized LIMIT/OFFSET in nested subqueries (e.g., `FromSelect`) work correctly with placeholder renumbering — inner `?` placeholders get renumbered by the outer query's placeholder format.
+
+**Builders affected:** `SelectBuilder`, `UpdateBuilder`, `DeleteBuilder`, `UnionBuilder`.
+
+**Files modified:** `select.go`, `update.go`, `delete.go`, `union.go`, `select_test.go`, `update_test.go`, `delete_test.go`, `union_test.go`, `example_test.go`, `integration/select_test.go`, `integration/delete_test.go`, `integration/union_test.go`. Full unit test coverage including parameterized output, all placeholder formats, zero values, subqueries, RemoveLimit/RemoveOffset, prepared-statement reuse verification, and large values. Integration tests (SQLite) cover all existing LIMIT/OFFSET scenarios plus new parameterized-specific tests.
 
 > **GitHub [#355](https://github.com/Masterminds/squirrel/issues/355)** — "Limit and Offset use prepare statement placeholder" (3 comments, opened 2023-04-20). Users explicitly request `LIMIT ?` / `OFFSET ?` with args for prepared statement reuse.
 >
@@ -314,7 +327,7 @@ Building an insert incrementally — adding a column+value pair after the initia
 | **[#308](https://github.com/Masterminds/squirrel/issues/308)** | UNION support | Standard SQL, 11 comments, highest community demand. See §1.1. |
 | **[#372](https://github.com/Masterminds/squirrel/issues/372)** | Upsert / ON CONFLICT | Essential write pattern, impossible via Suffix for multi-row. See §1.2. |
 | **[#271](https://github.com/Masterminds/squirrel/issues/271)** | ✅ CTE / WITH clause | Standard SQL:1999, 8 comments. See §1.4. **Done.** |
-| **[#355](https://github.com/Masterminds/squirrel/issues/355)** | Parameterized LIMIT/OFFSET | Defeats prepared-stmt caching. See §1.11. |
+| **[#355](https://github.com/Masterminds/squirrel/issues/355)** | ✅ Parameterized LIMIT/OFFSET | Defeats prepared-stmt caching. See §1.11. **Done.** |
 | **[#299](https://github.com/Masterminds/squirrel/issues/299)** / **[#258](https://github.com/Masterminds/squirrel/issues/258)** | Subquery in WHERE IN | 12 comments combined. See §1.5. |
 | **[#257](https://github.com/Masterminds/squirrel/issues/257)** | JOIN support in DELETE/UPDATE | MySQL DELETE...JOIN and UPDATE...JOIN are common patterns. Currently no `Join()` method on `DeleteBuilder`. |
 | **[#243](https://github.com/Masterminds/squirrel/issues/243)** | Common `Where` interface across builders | 6 comments. `SelectBuilder`, `UpdateBuilder`, `DeleteBuilder` all have `.Where()` but share no interface, preventing generic filter-application functions. |
@@ -384,7 +397,7 @@ Building an insert incrementally — adding a column+value pair after the initia
 | ✅ Done | `UNION` / `UNION ALL` / `INTERSECT` / `EXCEPT` | [#308](https://github.com/Masterminds/squirrel/issues/308) |
 | ✅ Done | Upsert (`ON CONFLICT` / `ON DUPLICATE KEY UPDATE`) | [#372](https://github.com/Masterminds/squirrel/issues/372) |
 | ✅ Done | CTE (`WITH` / `WITH RECURSIVE`) builder | [#271](https://github.com/Masterminds/squirrel/issues/271) |
-| ⭐ High | Parameterized `LIMIT` / `OFFSET` | [#355](https://github.com/Masterminds/squirrel/issues/355) |
+| ✅ Done | Parameterized `LIMIT` / `OFFSET` | [#355](https://github.com/Masterminds/squirrel/issues/355) |
 | ✅ Done | Subquery in WHERE IN / expression position | [#299](https://github.com/Masterminds/squirrel/issues/299), [#258](https://github.com/Masterminds/squirrel/issues/258) |
 | ⭐ High | JOIN in DELETE / UPDATE builders | [#257](https://github.com/Masterminds/squirrel/issues/257) |
 | ⭐ High | Common `Where` interface across builders | [#243](https://github.com/Masterminds/squirrel/issues/243) |

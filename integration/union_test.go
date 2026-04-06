@@ -413,6 +413,31 @@ func TestUnionRemoveLimitOffset(t *testing.T) {
 	assert.Equal(t, []string{"apple", "banana", "carrot", "eggplant"}, names)
 }
 
+func TestUnionParameterizedLimitPreparedStatementReuse(t *testing.T) {
+	// Verify that different LIMIT/OFFSET values produce the same SQL string
+	// (the key benefit of parameterized LIMIT/OFFSET).
+	q1 := sb.Select("name").From("sq_items").Where(sqrl.Eq{"category": "fruit"})
+	q2 := sb.Select("name").From("sq_items").Where(sqrl.Eq{"category": "vegetable"})
+
+	b1 := sqrl.UnionAll(q1, q2).RunWith(db).PlaceholderFormat(phf()).
+		OrderBy("name ASC").Limit(2).Offset(0)
+	b2 := sqrl.UnionAll(q1, q2).RunWith(db).PlaceholderFormat(phf()).
+		OrderBy("name ASC").Limit(2).Offset(2)
+
+	sql1, _, err := b1.ToSQL()
+	require.NoError(t, err)
+	sql2, _, err := b2.ToSQL()
+	require.NoError(t, err)
+
+	assert.Equal(t, sql1, sql2, "SQL strings should be identical for different limit/offset values")
+
+	names1 := unionQueryStrings(t, b1)
+	names2 := unionQueryStrings(t, b2)
+
+	assert.Equal(t, []string{"apple", "banana"}, names1)
+	assert.Equal(t, []string{"carrot", "eggplant"}, names2)
+}
+
 // ---------------------------------------------------------------------------
 // Prefix / Suffix
 // ---------------------------------------------------------------------------
