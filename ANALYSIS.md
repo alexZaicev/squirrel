@@ -307,11 +307,36 @@ While unlikely to be exploitable in practice today, duplicated security-critical
 
 **Files modified:** `select.go`, `select_test.go`, `example_test.go`, `integration/select_test.go`. Unit tests cover idempotent `Distinct()` calls (single, double, triple), `Distinct()` combined with `Options()`, and interaction ordering. Example test demonstrates the idempotent behavior. Integration test verifies that multiple `Distinct()` calls produce valid SQL that executes correctly against a real database.
 
-### 3.3 🔴 HIGH — `nil` Or/And Clause Silently Produces Wrong WHERE
+### 3.3 ✅ FIXED — `nil` Or/And Clause Silently Produces Wrong WHERE — **DONE**
 
 > **GitHub [#382](https://github.com/Masterminds/squirrel/issues/382)** — "Incorrect SQL query when nil Or clause" (opened 2024-10-07).
 
-Passing a `nil` `sq.Or` to `Where()` produces `WHERE (1=0)`, which filters out **all** rows. This is because `Or{}.ToSql()` returns `(1=0)` (the identity for OR). When a dynamically-constructed filter returns `nil`, the user expects "no filter" — not "match nothing". This is a silent data-loss bug.
+~~Passing a `nil` `sq.Or` to `Where()` produces `WHERE (1=0)`, which filters out **all** rows. This is because `Or{}.ToSql()` returns `(1=0)` (the identity for OR). When a dynamically-constructed filter returns `nil`, the user expects "no filter" — not "match nothing". This is a silent data-loss bug.~~
+
+**Fixed** (April 2026) by changing `conj.join()` in `expr.go` to return empty SQL for nil/empty conjunctions instead of the mathematical identity values (`(1=1)` for AND, `(1=0)` for OR). Empty SQL is silently omitted from `WHERE` clauses by the existing `appendToSQL` / `appendPrefixedToSQL` infrastructure.
+
+**Root cause:** The `conj.join()` method returned `(1=0)` (the OR identity) when `Or` was nil or empty. While mathematically correct, this was a silent data-loss bug when used in `Where()` — `WHERE (1=0)` filters out **all** rows. The typical pattern that triggered this was dynamically building filters:
+```go
+var filters sq.Or
+if someCondition {
+    filters = append(filters, sq.Eq{"col": val})
+}
+query.Where(filters) // if no conditions → WHERE (1=0) → zero rows!
+```
+
+**Behavior after fix:**
+- `nil` `Or` / `And` in `Where()` → no `WHERE` clause emitted → all rows returned (no filter)
+- Empty `Or{}` / `And{}` in `Where()` → no `WHERE` clause emitted → all rows returned (no filter)
+- `nil` `Or` / `And` combined with other `Where()` conditions → only the real conditions appear
+- `Or{}.ToSQL()` → `""` (empty SQL, no args) instead of `"(1=0)"`
+- `And{}.ToSQL()` → `""` (empty SQL, no args) instead of `"(1=1)"`
+- Non-empty `Or` / `And` behavior is completely unchanged
+
+**Companion fixes:**
+- `appendToSQL` in `part.go` — fixed separator tracking to use a `first` boolean instead of the raw loop index `i`. This prevents a leading separator (`" AND x = ?"` instead of `"x = ?"`) when early parts produce empty SQL.
+- `appendPrefixedToSQL` — new helper function in `part.go` that buffers parts before writing the keyword prefix (`WHERE`, `HAVING`). The keyword is only written if parts produce non-empty SQL. Used by `selectData`, `updateData`, `deleteData`, and `insertData` (conflict WHERE) to prevent dangling `WHERE ` in the output.
+
+**Files modified:** `expr.go`, `part.go`, `select.go`, `update.go`, `delete.go`, `insert.go`, `expr_test.go`, `where_test.go`, `integration/expr_test.go`. Full unit test coverage including nil `Or`/`And`, empty `Or{}`/`And{}`, nil `Or`/`And` in `Where()`, nil followed by real conditions, real conditions followed by nil, Dollar placeholder correctness, and `appendToSQL` separator correctness with empty first parts. Integration tests cover nil/empty `Or`/`And` producing no filter (returning all rows), and combined with real conditions.
 
 ### 3.4 🔴 HIGH — Dollar Placeholder Misnumbering with Subqueries in `UpdateBuilder.Set`
 
@@ -422,7 +447,7 @@ Building an insert incrementally — adding a column+value pair after the initia
 |----------|-------|--------|------|
 | 🔴 High | Dollar placeholder misnumbering with subqueries in `Update.Set` | [#326](https://github.com/Masterminds/squirrel/issues/326) | Bug |
 | 🔴 High | Misplaced params with window functions / multiple subqueries | [#351](https://github.com/Masterminds/squirrel/issues/351), [#285](https://github.com/Masterminds/squirrel/issues/285) | Bug |
-| 🔴 High | `nil` Or/And clause silently produces `WHERE (1=0)` | [#382](https://github.com/Masterminds/squirrel/issues/382) | Bug |
+| ✅ Fixed | `nil` Or/And clause silently produces `WHERE (1=0)` | [#382](https://github.com/Masterminds/squirrel/issues/382) | Bug |
 | 🟡 High | `CaseBuilder` rejects non-string `int` values in When/Then | [#388](https://github.com/Masterminds/squirrel/issues/388) | Bug |
 | 🟡 High | Conditional insert columns/values produce invalid SQL | [#336](https://github.com/Masterminds/squirrel/issues/336) | Bug |
 | ✅ Fixed | Multiple `Distinct()` calls produce invalid SQL | [#281](https://github.com/Masterminds/squirrel/issues/281) | Bug |

@@ -114,8 +114,7 @@ func (d *selectData) toSQLRaw() (sqlStr string, args []any, err error) {
 	}
 
 	if len(d.WhereParts) > 0 {
-		sql.WriteString(" WHERE ")
-		args, err = appendToSQL(d.WhereParts, sql, " AND ", args)
+		args, err = appendPrefixedToSQL(d.WhereParts, sql, " WHERE ", args)
 		if err != nil {
 			return
 		}
@@ -127,8 +126,7 @@ func (d *selectData) toSQLRaw() (sqlStr string, args []any, err error) {
 	}
 
 	if len(d.HavingParts) > 0 {
-		sql.WriteString(" HAVING ")
-		args, err = appendToSQL(d.HavingParts, sql, " AND ", args)
+		args, err = appendPrefixedToSQL(d.HavingParts, sql, " HAVING ", args)
 		if err != nil {
 			return
 		}

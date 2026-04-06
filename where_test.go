@@ -25,6 +25,28 @@ func TestWherePartsAppendToSqlErr(t *testing.T) {
 	assert.Error(t, err)
 }
 
+func TestWherePartsAppendToSqlNilFirst(t *testing.T) {
+	parts := []Sqlizer{
+		newWherePart(nil),
+		newWherePart("x = ?", 1),
+	}
+	sql := &bytes.Buffer{}
+	args, _ := appendToSQL(parts, sql, " AND ", []any{})
+	assert.Equal(t, "x = ?", sql.String())
+	assert.Equal(t, []any{1}, args)
+}
+
+func TestWherePartsAppendToSqlAllNil(t *testing.T) {
+	parts := []Sqlizer{
+		newWherePart(nil),
+		newWherePart(nil),
+	}
+	sql := &bytes.Buffer{}
+	args, _ := appendToSQL(parts, sql, " AND ", []any{})
+	assert.Empty(t, sql.String())
+	assert.Empty(t, args)
+}
+
 func TestWherePartNil(t *testing.T) {
 	sql, _, _ := newWherePart(nil).ToSQL()
 	assert.Empty(t, sql)

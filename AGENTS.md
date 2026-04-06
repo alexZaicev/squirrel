@@ -220,7 +220,7 @@ Do not add new dependencies without strong justification. This is a maintenance-
 - When using `Sqlizer` values in `Eq`/`NotEq`/`Lt`/`Gt`/`LtOrEq`/`GtOrEq` (subquery in expression position), the expressions use `nestedToSQL` internally, which calls `toSQLRaw()` to prevent double placeholder replacement. This works automatically — callers do not need to reset placeholder formats on the inner query.
 - `[]byte` and `[]uint8` are indistinguishable in Go — `Eq{"col": []uint8{1,2,3}}` will **not** produce an `IN` clause because `database/sql` treats `[]byte` as a single value.
 - The `DebugSqlizer` function is for debugging only — its output is not guaranteed to be valid SQL and must never be used for execution.
-- Empty `Eq{}` evaluates to `(1=1)` (true) and empty `And{}` also evaluates to `(1=1)`. Empty `Or{}` evaluates to `(1=0)` (false).
+- Empty `Eq{}` evaluates to `(1=1)` (true). Empty or nil `And{}` / `Or{}` evaluate to empty SQL (no-op) — they are silently omitted from `WHERE` clauses, meaning "no filter". This prevents the previous bug where nil `Or` produced `WHERE (1=0)` and filtered out all rows (GitHub [#382](https://github.com/Masterminds/squirrel/issues/382)).
 - `setRunWith` automatically wraps `StdSql` / `StdSqlCtx` implementations via `WrapStdSql` / `WrapStdSqlCtx` — callers don't need to wrap manually when using `RunWith`.
 - `Limit` and `Offset` are parameterized — they emit `LIMIT ?` / `OFFSET ?` with bound args (type `uint64`). The data struct fields are `*uint64` (nil means "not set", non-nil means "set", including zero). `RemoveLimit()`/`RemoveOffset()` reset to nil. This applies to all builders: `SelectBuilder`, `UpdateBuilder`, `DeleteBuilder`, `UnionBuilder`.
 

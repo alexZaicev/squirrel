@@ -121,8 +121,7 @@ func (d *updateData) toSQLRaw() (sqlStr string, args []any, err error) {
 	}
 
 	if len(d.WhereParts) > 0 {
-		sql.WriteString(" WHERE ")
-		args, err = appendToSQL(d.WhereParts, sql, " AND ", args)
+		args, err = appendPrefixedToSQL(d.WhereParts, sql, " WHERE ", args)
 		if err != nil {
 			return
 		}

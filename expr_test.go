@@ -534,23 +534,95 @@ func TestNotNilPointer(t *testing.T) {
 func TestEmptyAndToSql(t *testing.T) {
 	sql, args, err := And{}.ToSQL()
 	assert.NoError(t, err)
+	assert.Empty(t, sql)
+	assert.Empty(t, args)
+}
 
-	expectedSQL := "(1=1)"
-	assert.Equal(t, expectedSQL, sql)
-
-	expectedArgs := []any{}
-	assert.Equal(t, expectedArgs, args)
+func TestNilAndToSql(t *testing.T) {
+	var a And
+	sql, args, err := a.ToSQL()
+	assert.NoError(t, err)
+	assert.Empty(t, sql)
+	assert.Empty(t, args)
 }
 
 func TestEmptyOrToSql(t *testing.T) {
 	sql, args, err := Or{}.ToSQL()
 	assert.NoError(t, err)
+	assert.Empty(t, sql)
+	assert.Empty(t, args)
+}
 
-	expectedSQL := "(1=0)"
-	assert.Equal(t, expectedSQL, sql)
+func TestNilOrToSql(t *testing.T) {
+	var o Or
+	sql, args, err := o.ToSQL()
+	assert.NoError(t, err)
+	assert.Empty(t, sql)
+	assert.Empty(t, args)
+}
 
-	expectedArgs := []any{}
-	assert.Equal(t, expectedArgs, args)
+func TestNilOrInWhereProducesNoFilter(t *testing.T) {
+	// GitHub #382 — nil Or in Where should produce no WHERE clause, not WHERE (1=0).
+	var filters Or
+	sql, args, err := Select("*").From("users").Where(filters).ToSQL()
+	assert.NoError(t, err)
+	assert.Equal(t, "SELECT * FROM users", sql)
+	assert.Empty(t, args)
+}
+
+func TestNilAndInWhereProducesNoFilter(t *testing.T) {
+	// GitHub #382 — nil And in Where should produce no WHERE clause.
+	var filters And
+	sql, args, err := Select("*").From("users").Where(filters).ToSQL()
+	assert.NoError(t, err)
+	assert.Equal(t, "SELECT * FROM users", sql)
+	assert.Empty(t, args)
+}
+
+func TestEmptyOrInWhereProducesNoFilter(t *testing.T) {
+	// GitHub #382 — empty Or{} in Where should produce no WHERE clause.
+	sql, args, err := Select("*").From("users").Where(Or{}).ToSQL()
+	assert.NoError(t, err)
+	assert.Equal(t, "SELECT * FROM users", sql)
+	assert.Empty(t, args)
+}
+
+func TestEmptyAndInWhereProducesNoFilter(t *testing.T) {
+	// GitHub #382 — empty And{} in Where should produce no WHERE clause.
+	sql, args, err := Select("*").From("users").Where(And{}).ToSQL()
+	assert.NoError(t, err)
+	assert.Equal(t, "SELECT * FROM users", sql)
+	assert.Empty(t, args)
+}
+
+func TestNilOrFollowedByConditionInWhere(t *testing.T) {
+	// GitHub #382 — nil Or followed by a real condition should produce only the real condition.
+	var filters Or
+	sql, args, err := Select("*").From("users").Where(filters).Where(Eq{"active": true}).ToSQL()
+	assert.NoError(t, err)
+	assert.Equal(t, "SELECT * FROM users WHERE active = ?", sql)
+	assert.Equal(t, []any{true}, args)
+}
+
+func TestConditionFollowedByNilOrInWhere(t *testing.T) {
+	// GitHub #382 — real condition followed by nil Or should produce only the real condition.
+	var filters Or
+	sql, args, err := Select("*").From("users").Where(Eq{"active": true}).Where(filters).ToSQL()
+	assert.NoError(t, err)
+	assert.Equal(t, "SELECT * FROM users WHERE active = ?", sql)
+	assert.Equal(t, []any{true}, args)
+}
+
+func TestNilOrWithDollarPlaceholders(t *testing.T) {
+	var filters Or
+	sql, args, err := Select("*").From("users").
+		Where(filters).
+		Where(Eq{"active": true}).
+		PlaceholderFormat(Dollar).
+		ToSQL()
+	assert.NoError(t, err)
+	assert.Equal(t, "SELECT * FROM users WHERE active = $1", sql)
+	assert.Equal(t, []any{true}, args)
 }
 
 func TestNotToSql(t *testing.T) {

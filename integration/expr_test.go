@@ -375,7 +375,7 @@ func TestExprAndOr(t *testing.T) {
 	})
 
 	t.Run("EmptyAnd", func(t *testing.T) {
-		// Arrange — empty And{} evaluates to (1=1), matching all
+		// Arrange — empty And{} produces no WHERE clause, matching all rows
 		q := sb.Select("name").From("sq_items").Where(sqrl.And{}).OrderBy("id")
 
 		// Act
@@ -386,14 +386,68 @@ func TestExprAndOr(t *testing.T) {
 	})
 
 	t.Run("EmptyOr", func(t *testing.T) {
-		// Arrange — empty Or{} evaluates to (1=0), matching none
-		q := sb.Select("name").From("sq_items").Where(sqrl.Or{})
+		// Arrange — empty Or{} produces no WHERE clause, matching all rows (GitHub #382 fix)
+		q := sb.Select("name").From("sq_items").Where(sqrl.Or{}).OrderBy("id")
 
 		// Act
 		names := queryStrings(t, q)
 
-		// Assert
-		assert.Empty(t, names)
+		// Assert — all rows returned, not zero
+		assert.Len(t, names, 6)
+	})
+
+	t.Run("NilOrInWhere", func(t *testing.T) {
+		// Arrange — GitHub #382: nil Or in Where should produce no WHERE clause
+		var filters sqrl.Or
+		q := sb.Select("name").From("sq_items").Where(filters).OrderBy("id")
+
+		// Act
+		names := queryStrings(t, q)
+
+		// Assert — all rows returned
+		assert.Len(t, names, 6)
+	})
+
+	t.Run("NilAndInWhere", func(t *testing.T) {
+		// Arrange — GitHub #382: nil And in Where should produce no WHERE clause
+		var filters sqrl.And
+		q := sb.Select("name").From("sq_items").Where(filters).OrderBy("id")
+
+		// Act
+		names := queryStrings(t, q)
+
+		// Assert — all rows returned
+		assert.Len(t, names, 6)
+	})
+
+	t.Run("NilOrFollowedByCondition", func(t *testing.T) {
+		// Arrange — GitHub #382: nil Or followed by a real condition
+		var filters sqrl.Or
+		q := sb.Select("name").From("sq_items").
+			Where(filters).
+			Where(sqrl.Eq{"category": "fruit"}).
+			OrderBy("id")
+
+		// Act
+		names := queryStrings(t, q)
+
+		// Assert — only fruit items
+		assert.Equal(t, []string{"apple", "banana"}, names)
+	})
+
+	t.Run("ConditionFollowedByNilOr", func(t *testing.T) {
+		// Arrange — real condition followed by nil Or
+		var filters sqrl.Or
+		q := sb.Select("name").From("sq_items").
+			Where(sqrl.Eq{"category": "fruit"}).
+			Where(filters).
+			OrderBy("id")
+
+		// Act
+		names := queryStrings(t, q)
+
+		// Assert — only fruit items
+		assert.Equal(t, []string{"apple", "banana"}, names)
 	})
 }
 

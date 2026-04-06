@@ -477,9 +477,9 @@ func (nb NotBetween) ToSQL() (sql string, args []any, err error) {
 
 type conj []Sqlizer
 
-func (c conj) join(sep, defaultExpr string) (sql string, args []any, err error) {
+func (c conj) join(sep string) (sql string, args []any, err error) {
 	if len(c) == 0 {
-		return defaultExpr, []any{}, nil
+		return "", []any{}, nil
 	}
 	var sqlParts []string
 	for _, sqlizer := range c {
@@ -502,14 +502,14 @@ func (c conj) join(sep, defaultExpr string) (sql string, args []any, err error) 
 type And conj
 
 func (a And) ToSQL() (string, []any, error) {
-	return conj(a).join(" AND ", sqlTrue)
+	return conj(a).join(" AND ")
 }
 
 // Or conjunction Sqlizers
 type Or conj
 
 func (o Or) ToSQL() (string, []any, error) {
-	return conj(o).join(" OR ", sqlFalse)
+	return conj(o).join(" OR ")
 }
 
 // Not negates the given Sqlizer condition.

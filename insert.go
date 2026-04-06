@@ -253,10 +253,7 @@ func (d *insertData) appendConflictToSQL(w io.Writer, args []any) ([]any, error)
 	}
 
 	if len(d.ConflictWhereParts) > 0 {
-		if _, err := io.WriteString(w, " WHERE "); err != nil {
-			return nil, err
-		}
-		args, err = appendToSQL(d.ConflictWhereParts, w, " AND ", args)
+		args, err = appendPrefixedToSQL(d.ConflictWhereParts, w, " WHERE ", args)
 		if err != nil {
 			return nil, err
 		}
