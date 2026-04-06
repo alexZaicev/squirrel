@@ -1,0 +1,86 @@
+version: "2"
+run:
+  concurrency: 16
+linters:
+  enable:
+    - errorlint
+    - gocritic
+    - lll
+    - misspell
+    - nolintlint
+    - revive
+    - testifylint
+    - unparam
+    - whitespace
+    - govet
+  settings:
+    gocritic:
+      disabled-checks:
+        - appendAssign
+        - assignOp
+        - badCond
+        - commentFormatting
+        - exitAfterDefer
+        - ifElseChain
+        - mapKey
+        - singleCaseSwitch
+        - typeSwitchVar
+    lll:
+      line-length: 160
+      tab-width: 1
+    testifylint:
+      enable-all: true
+      disable:
+        - go-require
+        - suite-subtest-run
+        - require-error
+        - suite-dont-use-pkg
+        - suite-thelper
+  exclusions:
+    generated: lax
+    presets:
+      - comments
+      - common-false-positives
+      - legacy
+      - std-error-handling
+    rules:
+      - linters:
+          - unparam
+        path: (.+)_test\.go
+      - linters:
+          - revive
+        text: 'unused-parameter: parameter \S+ seems to be unused, consider removing or renaming it as _'
+      - linters:
+          - revive
+        text: 'empty-block: this block is empty, you can remove it'
+      - path: (.+)\.go$
+        text: SA5011
+      - linters:
+          - revive
+        text: 'var-naming: avoid meaningless package names'
+      - linters:
+          - govet
+        path: wire(\_gen)?.go
+    paths:
+      - third_party$
+      - builtin$
+      - examples$
+      - ^mocks
+      - ^pkg/schemaregistry # TODO: remove when schema registry will be removed from this repo
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0
+formatters:
+  enable:
+    - gofumpt
+    - goimports
+  settings:
+    goimports:
+      local-prefixes:
+        - github.com/trainlog
+  exclusions:
+    generated: lax
+    paths:
+      - third_party$
+      - builtin$
+      - examples$

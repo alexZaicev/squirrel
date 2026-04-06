@@ -1,0 +1,7 @@
+ignore: |
+  vendor/**
+  mocks/**
+
+line-length:
+    max: 140
+    level: warning

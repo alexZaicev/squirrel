@@ -8,13 +8,11 @@ import (
 	"os"
 	"testing"
 
-	"github.com/stretchr/testify/assert"
-
-  sqrl "github.com/Masterminds/squirrel"
-
+	sqrl "github.com/alexZaicev/squirrel"
 	_ "github.com/go-sql-driver/mysql"
 	_ "github.com/lib/pq"
 	_ "github.com/mattn/go-sqlite3"
+	"github.com/stretchr/testify/assert"
 )
 
 const (
@@ -29,9 +27,7 @@ const (
 		`
 )
 
-var (
-	sb sqrl.StatementBuilderType
-)
+var sb sqrl.StatementBuilderType
 
 func TestMain(m *testing.M) {
 	var driver, dataSource string
@@ -39,9 +35,9 @@ func TestMain(m *testing.M) {
 	flag.StringVar(&dataSource, "dataSource", "", "integration database data source")
 	flag.Parse()
 
-  if driver == "" {
-    driver = "sqlite3"
-  }
+	if driver == "" {
+		driver = "sqlite3"
+	}
 
 	if driver == "sqlite3" && dataSource == "" {
 		dataSource = ":memory:"
