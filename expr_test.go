@@ -464,3 +464,136 @@ func ExampleEq() {
 		"company": 20,
 	})
 }
+
+func TestEqSubqueryToSql(t *testing.T) {
+	subQ := Select("id").From("other_table").Where(Eq{"active": true})
+	b := Eq{"id": subQ}
+	sql, args, err := b.ToSQL()
+	assert.NoError(t, err)
+
+	expectedSQL := "id IN (SELECT id FROM other_table WHERE active = ?)"
+	assert.Equal(t, expectedSQL, sql)
+
+	expectedArgs := []any{true}
+	assert.Equal(t, expectedArgs, args)
+}
+
+func TestNotEqSubqueryToSql(t *testing.T) {
+	subQ := Select("id").From("blocked_users")
+	b := NotEq{"user_id": subQ}
+	sql, args, err := b.ToSQL()
+	assert.NoError(t, err)
+
+	expectedSQL := "user_id NOT IN (SELECT id FROM blocked_users)"
+	assert.Equal(t, expectedSQL, sql)
+
+	assert.Empty(t, args)
+}
+
+func TestEqSubqueryWithArgsToSql(t *testing.T) {
+	subQ := Select("id").From("posts").Where(And{
+		Eq{"status": "published"},
+		Gt{"views": 100},
+	})
+	b := Eq{"post_id": subQ}
+	sql, args, err := b.ToSQL()
+	assert.NoError(t, err)
+
+	expectedSQL := "post_id IN (SELECT id FROM posts WHERE (status = ? AND views > ?))"
+	assert.Equal(t, expectedSQL, sql)
+
+	expectedArgs := []any{"published", 100}
+	assert.Equal(t, expectedArgs, args)
+}
+
+func TestEqSubqueryWithMultipleKeysToSql(t *testing.T) {
+	subQ := Select("id").From("active_users")
+	b := Eq{"active": true, "user_id": subQ}
+	sql, args, err := b.ToSQL()
+	assert.NoError(t, err)
+
+	expectedSQL := "active = ? AND user_id IN (SELECT id FROM active_users)"
+	assert.Equal(t, expectedSQL, sql)
+
+	expectedArgs := []any{true}
+	assert.Equal(t, expectedArgs, args)
+}
+
+func TestEqSubqueryInSelectWhere(t *testing.T) {
+	subQ := Select("id").From("departments").Where(Eq{"name": "Engineering"})
+	b := Select("*").From("employees").Where(Eq{"department_id": subQ})
+	sql, args, err := b.ToSQL()
+	assert.NoError(t, err)
+
+	expectedSQL := "SELECT * FROM employees WHERE department_id IN (SELECT id FROM departments WHERE name = ?)"
+	assert.Equal(t, expectedSQL, sql)
+
+	expectedArgs := []any{"Engineering"}
+	assert.Equal(t, expectedArgs, args)
+}
+
+func TestEqSubqueryWithDollarPlaceholders(t *testing.T) {
+	subQ := Select("id").From("other_table").Where(Eq{"active": true})
+	b := Select("*").From("main_table").
+		Where(Eq{"status": "open"}).
+		Where(Eq{"id": subQ}).
+		PlaceholderFormat(Dollar)
+	sql, args, err := b.ToSQL()
+	assert.NoError(t, err)
+
+	expectedSQL := "SELECT * FROM main_table WHERE status = $1 AND id IN (SELECT id FROM other_table WHERE active = $2)"
+	assert.Equal(t, expectedSQL, sql)
+
+	expectedArgs := []any{"open", true}
+	assert.Equal(t, expectedArgs, args)
+}
+
+func TestLtSubqueryToSql(t *testing.T) {
+	subQ := Select("AVG(price)").From("products")
+	b := Lt{"price": subQ}
+	sql, args, err := b.ToSQL()
+	assert.NoError(t, err)
+
+	expectedSQL := "price < (SELECT AVG(price) FROM products)"
+	assert.Equal(t, expectedSQL, sql)
+
+	assert.Empty(t, args)
+}
+
+func TestGtSubqueryToSql(t *testing.T) {
+	subQ := Select("AVG(score)").From("results").Where(Eq{"subject": "math"})
+	b := Gt{"score": subQ}
+	sql, args, err := b.ToSQL()
+	assert.NoError(t, err)
+
+	expectedSQL := "score > (SELECT AVG(score) FROM results WHERE subject = ?)"
+	assert.Equal(t, expectedSQL, sql)
+
+	expectedArgs := []any{"math"}
+	assert.Equal(t, expectedArgs, args)
+}
+
+func TestLtOrEqSubqueryToSql(t *testing.T) {
+	subQ := Select("MAX(age)").From("users")
+	b := LtOrEq{"age": subQ}
+	sql, args, err := b.ToSQL()
+	assert.NoError(t, err)
+
+	expectedSQL := "age <= (SELECT MAX(age) FROM users)"
+	assert.Equal(t, expectedSQL, sql)
+
+	assert.Empty(t, args)
+}
+
+func TestGtOrEqSubqueryToSql(t *testing.T) {
+	subQ := Select("MIN(salary)").From("employees").Where(Eq{"department": "sales"})
+	b := GtOrEq{"salary": subQ}
+	sql, args, err := b.ToSQL()
+	assert.NoError(t, err)
+
+	expectedSQL := "salary >= (SELECT MIN(salary) FROM employees WHERE department = ?)"
+	assert.Equal(t, expectedSQL, sql)
+
+	expectedArgs := []any{"sales"}
+	assert.Equal(t, expectedArgs, args)
+}

@@ -41,8 +41,22 @@
 
 > **GitHub [#271](https://github.com/Masterminds/squirrel/issues/271)** — "Does squirrel support, or plan to support, common table expressions" (8 comments, opened 2020-12-31). Long-standing request with community discussion. Users resort to fragile `Prefix` workarounds.
 
-### 1.5 Subqueries in Expression Position (`WHERE col IN (SELECT ...)`)
-While `FromSelect` exists for the `FROM` clause, there is no ergonomic way to use a `SelectBuilder` as a subquery inside `Eq`, `NotEq`, or general `WHERE IN (subquery)` expressions. Users must construct this manually with `Expr("col IN (?)", subquery)`.
+### 1.5 ✅ Subqueries in Expression Position (`WHERE col IN (SELECT ...)`) — **DONE**
+~~While `FromSelect` exists for the `FROM` clause, there is no ergonomic way to use a `SelectBuilder` as a subquery inside `Eq`, `NotEq`, or general `WHERE IN (subquery)` expressions. Users must construct this manually with `Expr("col IN (?)", subquery)`.~~
+
+**Implemented** (April 2026) by detecting `Sqlizer` values in `Eq`/`NotEq` and `Lt`/`Gt`/`LtOrEq`/`GtOrEq` expression types. When a value implements `Sqlizer` (e.g. `SelectBuilder`), it is expanded as a subquery using `nestedToSQL` (which calls `toSQLRaw()` to prevent double placeholder replacement).
+
+**Behavior:**
+- `Eq{"col": subquery}` → `col IN (SELECT ...)`
+- `NotEq{"col": subquery}` → `col NOT IN (SELECT ...)`
+- `Lt{"col": subquery}` → `col < (SELECT ...)` (scalar subquery)
+- `Gt{"col": subquery}` → `col > (SELECT ...)` (scalar subquery)
+- `LtOrEq{"col": subquery}` → `col <= (SELECT ...)` (scalar subquery)
+- `GtOrEq{"col": subquery}` → `col >= (SELECT ...)` (scalar subquery)
+
+**Placeholder handling:** Uses `nestedToSQL` which calls `toSQLRaw()` on the inner query, preventing double placeholder replacement. Works correctly with all placeholder formats (`Question`, `Dollar`, `Colon`, `AtP`). Mixed expressions (e.g., `Eq{"active": true, "user_id": subquery}`) correctly accumulate args from both literal values and subqueries.
+
+**Files modified:** `expr.go`, `expr_test.go`, `integration/expr_test.go`. Full unit test coverage including `Eq`, `NotEq`, `Lt`, `Gt`, `LtOrEq`, `GtOrEq` with subqueries, multi-key expressions, nested `And`/`Or` conditions inside subqueries, integration with `SelectBuilder.Where()`, and Dollar placeholder numbering. Integration tests cover: `Eq`/`NotEq` subquery IN/NOT IN, empty-result subqueries, all-rows subqueries, mixed literal+subquery keys, cross-table subqueries, doubly-nested subqueries, subqueries combined with `And`/`Or`, scalar comparison subqueries (`Lt`/`Gt`/`LtOrEq`/`GtOrEq` with `AVG`/`MIN`/`MAX`), and placeholder correctness for all formats (`Question`, `Dollar`, `Colon`, `AtP`). Tested against SQLite, MySQL, and PostgreSQL.
 
 > **GitHub [#299](https://github.com/Masterminds/squirrel/issues/299)** — "Subquery in the WHERE condition" (5 comments, opened 2021-11-07). Explicit request for `WHERE col IN (SELECT ...)` support with conditional subquery building.
 >
@@ -316,7 +330,7 @@ Building an insert incrementally — adding a column+value pair after the initia
 | ✅ Done | Upsert (`ON CONFLICT` / `ON DUPLICATE KEY UPDATE`) | [#372](https://github.com/Masterminds/squirrel/issues/372) |
 | ✅ Done | CTE (`WITH` / `WITH RECURSIVE`) builder | [#271](https://github.com/Masterminds/squirrel/issues/271) |
 | ⭐ High | Parameterized `LIMIT` / `OFFSET` | [#355](https://github.com/Masterminds/squirrel/issues/355) |
-| ⭐ High | Subquery in WHERE IN / expression position | [#299](https://github.com/Masterminds/squirrel/issues/299), [#258](https://github.com/Masterminds/squirrel/issues/258) |
+| ✅ Done | Subquery in WHERE IN / expression position | [#299](https://github.com/Masterminds/squirrel/issues/299), [#258](https://github.com/Masterminds/squirrel/issues/258) |
 | ⭐ High | JOIN in DELETE / UPDATE builders | [#257](https://github.com/Masterminds/squirrel/issues/257) |
 | ⭐ High | Common `Where` interface across builders | [#243](https://github.com/Masterminds/squirrel/issues/243) |
 | ⭐ High | `RemoveOrderBy` / `GetOrderBy` | [#369](https://github.com/Masterminds/squirrel/issues/369) |

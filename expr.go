@@ -166,6 +166,21 @@ func (eq Eq) toSQL(useNotOpr bool) (sql string, args []any, err error) {
 		var expr string
 		val := eq[key]
 
+		// Sqlizer values (e.g. SelectBuilder) are treated as subqueries:
+		//   Eq{"col": subquery}    → col IN (SELECT ...)
+		//   NotEq{"col": subquery} → col NOT IN (SELECT ...)
+		if sqlizer, ok := val.(Sqlizer); ok {
+			subSQL, subArgs, serr := nestedToSQL(sqlizer)
+			if serr != nil {
+				err = serr
+				return
+			}
+			expr = fmt.Sprintf("%s %s (%s)", key, inOpr, subSQL)
+			args = append(args, subArgs...)
+			exprs = append(exprs, expr)
+			continue
+		}
+
 		switch v := val.(type) {
 		case driver.Valuer:
 			if val, err = v.Value(); err != nil {
@@ -315,6 +330,20 @@ func (lt Lt) toSQL(opposite, orEq bool) (sql string, args []any, err error) {
 	for _, key := range sortedKeys {
 		var expr string
 		val := lt[key]
+
+		// Sqlizer values (e.g. SelectBuilder) are treated as scalar subqueries:
+		//   Lt{"col": subquery} → col < (SELECT ...)
+		if sqlizer, ok := val.(Sqlizer); ok {
+			subSQL, subArgs, serr := nestedToSQL(sqlizer)
+			if serr != nil {
+				err = serr
+				return
+			}
+			expr = fmt.Sprintf("%s %s (%s)", key, opr, subSQL)
+			args = append(args, subArgs...)
+			exprs = append(exprs, expr)
+			continue
+		}
 
 		switch v := val.(type) {
 		case driver.Valuer:

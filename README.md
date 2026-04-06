@@ -255,6 +255,172 @@ sql, args, err := sq.Select("*").FromSelect(sub, "subquery").ToSql()
 // SELECT * FROM (SELECT id FROM other_table WHERE age > ?) AS subquery
 ```
 
+Use a `SelectBuilder` as a value in `Eq` / `NotEq` for `WHERE ... IN (SELECT ...)`:
+
+```go
+sub := sq.Select("id").From("departments").Where(sq.Eq{"name": "Engineering"})
+sql, args, err := sq.Select("*").From("employees").
+    Where(sq.Eq{"department_id": sub}).ToSql()
+// SELECT * FROM employees WHERE department_id IN (SELECT id FROM departments WHERE name = ?)
+```
+
+`NotEq` produces `NOT IN`:
+
+```go
+blocked := sq.Select("user_id").From("bans")
+sq.Select("*").From("users").Where(sq.NotEq{"id": blocked})
+// SELECT * FROM users WHERE id NOT IN (SELECT user_id FROM bans)
+```
+
+Comparison operators (`Lt`, `Gt`, `LtOrEq`, `GtOrEq`) also accept subqueries for scalar comparisons:
+
+```go
+avgPrice := sq.Select("AVG(price)").From("products")
+sq.Select("name").From("products").Where(sq.Gt{"price": avgPrice})
+// SELECT name FROM products WHERE price > (SELECT AVG(price) FROM products)
+```
+
+Subqueries work correctly with all placeholder formats, including `Dollar` for PostgreSQL — placeholders are numbered sequentially across outer and inner queries.
+
+### UNION / INTERSECT / EXCEPT
+
+Combine multiple SELECT queries with set operations:
+
+```go
+q1 := sq.Select("name").From("employees")
+q2 := sq.Select("name").From("contractors")
+
+sql, args, err := sq.Union(q1, q2).ToSql()
+// SELECT name FROM employees UNION SELECT name FROM contractors
+
+sql, args, err = sq.UnionAll(q1, q2).ToSql()
+// SELECT name FROM employees UNION ALL SELECT name FROM contractors
+
+sql, args, err = sq.Intersect(q1, q2).ToSql()
+// SELECT name FROM employees INTERSECT SELECT name FROM contractors
+
+sql, args, err = sq.Except(q1, q2).ToSql()
+// SELECT name FROM employees EXCEPT SELECT name FROM contractors
+```
+
+Chain additional set operations and add `ORDER BY`, `LIMIT`, `OFFSET`:
+
+```go
+q3 := sq.Select("name").From("interns")
+sql, args, err := sq.Union(q1, q2).Union(q3).OrderBy("name").Limit(10).ToSql()
+```
+
+### Common Table Expressions (CTEs)
+
+Build `WITH` / `WITH RECURSIVE` clauses using `CteBuilder`:
+
+```go
+activeSub := sq.Select("id", "name").From("users").Where(sq.Eq{"active": true})
+sql, args, err := sq.With("active_users", activeSub).
+    Statement(sq.Select("*").From("active_users")).ToSql()
+// WITH active_users AS (SELECT id, name FROM users WHERE active = ?)
+//   SELECT * FROM active_users
+```
+
+Recursive CTEs:
+
+```go
+base := sq.Select("id", "parent_id").From("categories").Where(sq.Eq{"parent_id": nil})
+recursive := sq.Select("c.id", "c.parent_id").From("categories c").
+    Join("tree t ON c.parent_id = t.id")
+
+sql, args, err := sq.WithRecursive("tree", sq.Union(base, recursive)).
+    Statement(sq.Select("*").From("tree")).ToSql()
+// WITH RECURSIVE tree AS (
+//   SELECT id, parent_id FROM categories WHERE parent_id IS NULL
+//   UNION SELECT c.id, c.parent_id FROM categories c JOIN tree t ON c.parent_id = t.id
+// ) SELECT * FROM tree
+```
+
+CTEs with explicit column lists:
+
+```go
+sq.WithColumns("cte", []string{"x", "y"}, sq.Select("a", "b").From("t1")).
+    Statement(sq.Select("x", "y").From("cte"))
+// WITH cte (x, y) AS (SELECT a, b FROM t1) SELECT x, y FROM cte
+```
+
+The main `.Statement()` accepts any `Sqlizer` — SELECT, INSERT, UPDATE, DELETE, UNION, or even another CTE.
+
+### Upsert — ON CONFLICT (PostgreSQL) / ON DUPLICATE KEY UPDATE (MySQL)
+
+**PostgreSQL** — use `OnConflictColumns` (or `OnConflictOnConstraint`) with `OnConflictDoNothing` or `OnConflictDoUpdate`:
+
+```go
+// DO NOTHING
+sq.Insert("users").Columns("id", "name").Values(1, "John").
+    OnConflictColumns("id").OnConflictDoNothing().ToSql()
+// INSERT INTO users (id,name) VALUES (?,?) ON CONFLICT (id) DO NOTHING
+
+// DO UPDATE SET
+sq.Insert("users").Columns("id", "name").Values(1, "John").
+    OnConflictColumns("id").
+    OnConflictDoUpdate("name", sq.Expr("EXCLUDED.name")).ToSql()
+// INSERT INTO users (id,name) VALUES (?,?)
+//   ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name
+
+// DO UPDATE with WHERE clause
+sq.Insert("users").Columns("id", "name").Values(1, "John").
+    OnConflictColumns("id").
+    OnConflictDoUpdate("name", sq.Expr("EXCLUDED.name")).
+    OnConflictWhere(sq.Eq{"users.active": true}).ToSql()
+
+// Named constraint
+sq.Insert("users").Columns("id", "name").Values(1, "John").
+    OnConflictOnConstraint("users_pkey").OnConflictDoNothing().ToSql()
+
+// Map convenience
+sq.Insert("users").Columns("id", "name", "email").Values(1, "John", "j@x.com").
+    OnConflictColumns("id").
+    OnConflictDoUpdateMap(map[string]interface{}{
+        "name":  sq.Expr("EXCLUDED.name"),
+        "email": sq.Expr("EXCLUDED.email"),
+    }).ToSql()
+```
+
+**MySQL** — use `OnDuplicateKeyUpdate`:
+
+```go
+sq.Insert("users").Columns("id", "name").Values(1, "John").
+    OnDuplicateKeyUpdate("name", sq.Expr("VALUES(name)")).ToSql()
+// INSERT INTO users (id,name) VALUES (?,?) ON DUPLICATE KEY UPDATE name = VALUES(name)
+```
+
+### RETURNING Clause
+
+PostgreSQL, SQLite (3.35+), and MariaDB support `RETURNING`. Use the first-class
+`Returning` method on `InsertBuilder`, `UpdateBuilder`, and `DeleteBuilder`:
+
+```go
+sq.Insert("users").Columns("name").Values("moe").Returning("id").ToSql()
+// INSERT INTO users (name) VALUES (?) RETURNING id
+
+sq.Update("users").Set("name", "moe").Where(sq.Eq{"id": 1}).
+    Returning("id", "name").ToSql()
+// UPDATE users SET name = ? WHERE id = ? RETURNING id, name
+
+sq.Delete("users").Where(sq.Eq{"id": 1}).Returning("*").ToSql()
+// DELETE FROM users WHERE id = ? RETURNING *
+```
+
+`Returning` works correctly with `ON CONFLICT` — the `RETURNING` clause is emitted
+after the conflict action:
+
+```go
+sq.Insert("users").Columns("id", "name").Values(1, "John").
+    OnConflictColumns("id").
+    OnConflictDoUpdate("name", sq.Expr("EXCLUDED.name")).
+    Returning("id", "name").ToSql()
+// INSERT INTO users (id,name) VALUES (?,?)
+//   ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name
+//   RETURNING id, name
+```
+
 ### INSERT ... SELECT
 
 Insert rows from a SELECT query instead of literal values:
