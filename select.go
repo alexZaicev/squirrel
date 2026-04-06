@@ -320,6 +320,43 @@ func (b SelectBuilder) CrossJoin(join string, rest ...any) SelectBuilder {
 	return b.JoinClause("CROSS JOIN "+join, rest...)
 }
 
+// FullJoin adds a FULL OUTER JOIN clause to the query.
+func (b SelectBuilder) FullJoin(join string, rest ...any) SelectBuilder {
+	return b.JoinClause("FULL OUTER JOIN "+join, rest...)
+}
+
+// JoinUsing adds a JOIN ... USING clause to the query.
+// It is a convenience for the common case where the join condition is a simple
+// column equality: JOIN table USING (col1, col2, ...).
+func (b SelectBuilder) JoinUsing(table string, columns ...string) SelectBuilder {
+	return b.JoinClause("JOIN " + table + " USING (" + strings.Join(columns, ", ") + ")")
+}
+
+// LeftJoinUsing adds a LEFT JOIN ... USING clause to the query.
+func (b SelectBuilder) LeftJoinUsing(table string, columns ...string) SelectBuilder {
+	return b.JoinClause("LEFT JOIN " + table + " USING (" + strings.Join(columns, ", ") + ")")
+}
+
+// RightJoinUsing adds a RIGHT JOIN ... USING clause to the query.
+func (b SelectBuilder) RightJoinUsing(table string, columns ...string) SelectBuilder {
+	return b.JoinClause("RIGHT JOIN " + table + " USING (" + strings.Join(columns, ", ") + ")")
+}
+
+// InnerJoinUsing adds an INNER JOIN ... USING clause to the query.
+func (b SelectBuilder) InnerJoinUsing(table string, columns ...string) SelectBuilder {
+	return b.JoinClause("INNER JOIN " + table + " USING (" + strings.Join(columns, ", ") + ")")
+}
+
+// CrossJoinUsing adds a CROSS JOIN ... USING clause to the query.
+func (b SelectBuilder) CrossJoinUsing(table string, columns ...string) SelectBuilder {
+	return b.JoinClause("CROSS JOIN " + table + " USING (" + strings.Join(columns, ", ") + ")")
+}
+
+// FullJoinUsing adds a FULL OUTER JOIN ... USING clause to the query.
+func (b SelectBuilder) FullJoinUsing(table string, columns ...string) SelectBuilder {
+	return b.JoinClause("FULL OUTER JOIN " + table + " USING (" + strings.Join(columns, ", ") + ")")
+}
+
 // Where adds an expression to the WHERE clause of the query.
 //
 // Expressions are ANDed together in the generated SQL.

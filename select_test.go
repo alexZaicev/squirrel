@@ -289,6 +289,134 @@ func TestSelectJoinClausePlaceholderNumbering(t *testing.T) {
 	assert.Equal(t, []any{2, 1}, args)
 }
 
+func TestSelectBuilderFullJoin(t *testing.T) {
+	expectedSQL := "SELECT * FROM bar FULL OUTER JOIN baz ON bar.foo = baz.foo"
+
+	b := Select("*").From("bar").FullJoin("baz ON bar.foo = baz.foo")
+
+	sql, args, err := b.ToSQL()
+	assert.NoError(t, err)
+	assert.Equal(t, expectedSQL, sql)
+	assert.Nil(t, args)
+}
+
+func TestSelectBuilderFullJoinWithArgs(t *testing.T) {
+	expectedSQL := "SELECT * FROM bar FULL OUTER JOIN baz ON bar.foo = baz.foo AND baz.id = ?"
+	expectedArgs := []any{42}
+
+	b := Select("*").From("bar").FullJoin("baz ON bar.foo = baz.foo AND baz.id = ?", 42)
+
+	sql, args, err := b.ToSQL()
+	assert.NoError(t, err)
+	assert.Equal(t, expectedSQL, sql)
+	assert.Equal(t, expectedArgs, args)
+}
+
+func TestSelectBuilderJoinUsing(t *testing.T) {
+	expectedSQL := "SELECT * FROM bar JOIN baz USING (foo)"
+
+	b := Select("*").From("bar").JoinUsing("baz", "foo")
+
+	sql, args, err := b.ToSQL()
+	assert.NoError(t, err)
+	assert.Equal(t, expectedSQL, sql)
+	assert.Nil(t, args)
+}
+
+func TestSelectBuilderJoinUsingMultipleColumns(t *testing.T) {
+	expectedSQL := "SELECT * FROM bar JOIN baz USING (foo, bar_id)"
+
+	b := Select("*").From("bar").JoinUsing("baz", "foo", "bar_id")
+
+	sql, args, err := b.ToSQL()
+	assert.NoError(t, err)
+	assert.Equal(t, expectedSQL, sql)
+	assert.Nil(t, args)
+}
+
+func TestSelectBuilderLeftJoinUsing(t *testing.T) {
+	expectedSQL := "SELECT * FROM bar LEFT JOIN baz USING (foo)"
+
+	b := Select("*").From("bar").LeftJoinUsing("baz", "foo")
+
+	sql, args, err := b.ToSQL()
+	assert.NoError(t, err)
+	assert.Equal(t, expectedSQL, sql)
+	assert.Nil(t, args)
+}
+
+func TestSelectBuilderRightJoinUsing(t *testing.T) {
+	expectedSQL := "SELECT * FROM bar RIGHT JOIN baz USING (foo)"
+
+	b := Select("*").From("bar").RightJoinUsing("baz", "foo")
+
+	sql, args, err := b.ToSQL()
+	assert.NoError(t, err)
+	assert.Equal(t, expectedSQL, sql)
+	assert.Nil(t, args)
+}
+
+func TestSelectBuilderInnerJoinUsing(t *testing.T) {
+	expectedSQL := "SELECT * FROM bar INNER JOIN baz USING (foo)"
+
+	b := Select("*").From("bar").InnerJoinUsing("baz", "foo")
+
+	sql, args, err := b.ToSQL()
+	assert.NoError(t, err)
+	assert.Equal(t, expectedSQL, sql)
+	assert.Nil(t, args)
+}
+
+func TestSelectBuilderCrossJoinUsing(t *testing.T) {
+	expectedSQL := "SELECT * FROM bar CROSS JOIN baz USING (foo)"
+
+	b := Select("*").From("bar").CrossJoinUsing("baz", "foo")
+
+	sql, args, err := b.ToSQL()
+	assert.NoError(t, err)
+	assert.Equal(t, expectedSQL, sql)
+	assert.Nil(t, args)
+}
+
+func TestSelectBuilderFullJoinUsing(t *testing.T) {
+	expectedSQL := "SELECT * FROM bar FULL OUTER JOIN baz USING (foo)"
+
+	b := Select("*").From("bar").FullJoinUsing("baz", "foo")
+
+	sql, args, err := b.ToSQL()
+	assert.NoError(t, err)
+	assert.Equal(t, expectedSQL, sql)
+	assert.Nil(t, args)
+}
+
+func TestSelectBuilderFullJoinUsingMultipleColumns(t *testing.T) {
+	expectedSQL := "SELECT * FROM bar FULL OUTER JOIN baz USING (foo, bar_id)"
+
+	b := Select("*").From("bar").FullJoinUsing("baz", "foo", "bar_id")
+
+	sql, args, err := b.ToSQL()
+	assert.NoError(t, err)
+	assert.Equal(t, expectedSQL, sql)
+	assert.Nil(t, args)
+}
+
+func TestSelectBuilderMixedJoins(t *testing.T) {
+	expectedSQL := "SELECT * FROM bar " +
+		"JOIN baz USING (id) " +
+		"LEFT JOIN qux ON bar.qux_id = qux.id " +
+		"FULL OUTER JOIN quux USING (foo, bar_id)"
+
+	b := Select("*").From("bar").
+		JoinUsing("baz", "id").
+		LeftJoin("qux ON bar.qux_id = qux.id").
+		FullJoinUsing("quux", "foo", "bar_id")
+
+	sql, args, err := b.ToSQL()
+	assert.NoError(t, err)
+	assert.Equal(t, expectedSQL, sql)
+	assert.Nil(t, args)
+}
+
 func TestRemoveColumns(t *testing.T) {
 	query := Select("id").
 		From("users").

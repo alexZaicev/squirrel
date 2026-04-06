@@ -245,7 +245,7 @@ sq.Placeholders(3) // "?,?,?"
 sq.Select("department", "COUNT(*) as cnt").
     Distinct().                          // SELECT DISTINCT ...
     From("users").
-    Join("emails USING (email_id)").     // also LeftJoin, RightJoin, InnerJoin, CrossJoin
+    Join("emails USING (email_id)").     // also LeftJoin, RightJoin, InnerJoin, CrossJoin, FullJoin
     Where(sq.Gt{"age": 18}).
     GroupBy("department").
     Having("COUNT(*) > ?", 5).
@@ -258,6 +258,106 @@ sq.Select("department", "COUNT(*) as cnt").
 //   GROUP BY department HAVING COUNT(*) > ?
 //   ORDER BY cnt DESC LIMIT 10 OFFSET 20
 ```
+
+`FullJoin` adds a `FULL OUTER JOIN` clause:
+
+```go
+sq.Select("*").From("a").FullJoin("b ON a.id = b.a_id")
+// SELECT * FROM a FULL OUTER JOIN b ON a.id = b.a_id
+```
+
+Use the `*JoinUsing` convenience methods for the common case where the join
+condition is a simple column equality (`USING` clause):
+
+```go
+sq.Select("*").From("orders").JoinUsing("customers", "customer_id")
+// SELECT * FROM orders JOIN customers USING (customer_id)
+
+sq.Select("*").From("orders").LeftJoinUsing("customers", "customer_id", "region")
+// SELECT * FROM orders LEFT JOIN customers USING (customer_id, region)
+
+// All join types have a *JoinUsing variant:
+// JoinUsing, LeftJoinUsing, RightJoinUsing, InnerJoinUsing, CrossJoinUsing, FullJoinUsing
+```
+
+### Structured Joins with `JoinExpr`
+
+For more complex joins, `JoinExpr` provides a structured builder that avoids
+raw SQL strings. Pass the result to `JoinClause`:
+
+```go
+// Basic ON condition — no raw string concatenation needed
+sq.Select("items.name", "users.username").
+    From("items").
+    JoinClause(
+        sq.JoinExpr("users").On("items.fk_user_key = users.key"),
+    )
+// SELECT items.name, users.username FROM items JOIN users ON items.fk_user_key = users.key
+```
+
+Chain multiple `.On()` calls — they are ANDed together:
+
+```go
+sq.Select("items.name", "users.username").
+    From("items").
+    JoinClause(
+        sq.JoinExpr("users").
+            On("items.fk_user_key = users.key").
+            On("users.username = ?", "alice"),
+    )
+// ... JOIN users ON items.fk_user_key = users.key AND users.username = ?
+```
+
+Use `.OnExpr()` to compose with expression helpers like `Eq`, `Gt`, `Between`:
+
+```go
+sq.Select("*").From("items").JoinClause(
+    sq.JoinExpr("prices").
+        On("items.id = prices.item_id").
+        OnExpr(sq.Gt{"prices.amount": 100}),
+)
+// ... JOIN prices ON items.id = prices.item_id AND prices.amount > ?
+```
+
+Set the join type with `.Type()`, add an alias with `.As()`:
+
+```go
+sq.Select("i.name", "u.username").
+    From("items i").
+    JoinClause(
+        sq.JoinExpr("users").Type(sq.JoinLeft).As("u").
+            On("i.fk_user_key = u.key"),
+    )
+// SELECT i.name, u.username FROM items i LEFT JOIN users u ON i.fk_user_key = u.key
+```
+
+Available join types: `sq.JoinInner` (default), `sq.JoinLeft`, `sq.JoinRight`,
+`sq.JoinFull`, `sq.JoinCross`.
+
+Use `.SubQuery()` to join against a subquery:
+
+```go
+sub := sq.Select("id", "name").From("users").Where(sq.Eq{"active": true})
+sq.Select("items.name", "u.name").
+    From("items").
+    JoinClause(
+        sq.JoinExpr("").SubQuery(sub).As("u").
+            On("items.fk_user_key = u.id"),
+    )
+// ... JOIN (SELECT id, name FROM users WHERE active = ?) u ON items.fk_user_key = u.id
+```
+
+Use `.Using()` for USING clauses:
+
+```go
+sq.Select("*").From("orders").JoinClause(
+    sq.JoinExpr("customers").Using("customer_id"),
+)
+// SELECT * FROM orders JOIN customers USING (customer_id)
+```
+
+`JoinExpr` is fully compatible with the existing string-based join methods —
+you can mix both styles in the same query.
 
 Remove clauses that were previously set:
 
