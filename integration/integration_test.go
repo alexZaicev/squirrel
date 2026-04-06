@@ -8,7 +8,7 @@ import (
 	"os"
 	"testing"
 
-	sqrl "github.com/Masterminds/squirrel"
+	sqrl "github.com/alexZaicev/squirrel"
 	_ "github.com/go-sql-driver/mysql"
 	_ "github.com/lib/pq"
 	_ "github.com/mattn/go-sqlite3"

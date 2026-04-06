@@ -4,7 +4,7 @@
 
 Squirrel is a fluent SQL query builder library for Go. It is **not** an ORM. It builds SQL strings (`SELECT`, `INSERT`, `UPDATE`, `DELETE`, `CASE`) from composable, chainable method calls and can optionally execute them against a `database/sql` runner.
 
-- **Module path:** `github.com/Masterminds/squirrel`
+- **Module path:** `github.com/alexZaicev/squirrel`
 - **Go version:** `go 1.25.7` (specified in `go.mod`)
 - **License:** MIT
 - **Status:** Maintenance mode — bug fixes only, no new features.

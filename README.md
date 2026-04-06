@@ -1,23 +1,11 @@
-[![Stability: Maintenance](https://masterminds.github.io/stability/maintenance.svg)](https://masterminds.github.io/stability/maintenance.html)
-### Squirrel is "complete".
-Bug fixes will still be merged (slowly). Bug reports are welcome, but I will not necessarily respond to them. If another fork (or substantially similar project) actively improves on what Squirrel does, let me know and I may link to it here.
-
-
 # Squirrel - fluent SQL generator for Go
-
-```go
-import "github.com/Masterminds/squirrel"
-```
-
-
-[![Go Reference](https://pkg.go.dev/badge/github.com/Masterminds/squirrel.svg)](https://pkg.go.dev/github.com/Masterminds/squirrel)
 
 **Squirrel is not an ORM.**
 
 Squirrel helps you build SQL queries from composable parts:
 
 ```go
-import sq "github.com/Masterminds/squirrel"
+import sq "github.com/alexZaicev/squirrel"
 
 users := sq.Select("*").From("users").Join("emails USING (email_id)")
 
