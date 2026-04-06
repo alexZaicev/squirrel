@@ -12,16 +12,18 @@ func TestStatementBuilder(t *testing.T) {
 	db := &DBStub{}
 	sb := StatementBuilder.RunWith(db)
 
-	sb.Select("test").Exec()
-	assert.Equal(t, "SELECT test", db.LastExecSql)
+	_, err := sb.Select("test").Exec()
+	assert.NoError(t, err)
+	assert.Equal(t, "SELECT test", db.LastExecSQL)
 }
 
 func TestStatementBuilderPlaceholderFormat(t *testing.T) {
 	db := &DBStub{}
 	sb := StatementBuilder.RunWith(db).PlaceholderFormat(Dollar)
 
-	sb.Select("test").Where("x = ?").Exec()
-	assert.Equal(t, "SELECT test WHERE x = $1", db.LastExecSql)
+	_, err := sb.Select("test").Where("x = ?").Exec()
+	assert.NoError(t, err)
+	assert.Equal(t, "SELECT test WHERE x = $1", db.LastExecSQL)
 }
 
 func TestRunWithDB(t *testing.T) {
@@ -46,11 +48,11 @@ func TestRunWithTx(t *testing.T) {
 
 type fakeBaseRunner struct{}
 
-func (fakeBaseRunner) Exec(query string, args ...interface{}) (sql.Result, error) {
+func (fakeBaseRunner) Exec(query string, args ...any) (sql.Result, error) {
 	return nil, nil
 }
 
-func (fakeBaseRunner) Query(query string, args ...interface{}) (*sql.Rows, error) {
+func (fakeBaseRunner) Query(query string, args ...any) (*sql.Rows, error) {
 	return nil, nil
 }
 
@@ -62,18 +64,18 @@ func TestRunWithBaseRunner(t *testing.T) {
 
 func TestRunWithBaseRunnerQueryRowError(t *testing.T) {
 	sb := StatementBuilder.RunWith(fakeBaseRunner{})
-	assert.Error(t, RunnerNotQueryRunner, sb.Select("test").QueryRow().Scan(nil))
+	assert.ErrorIs(t, sb.Select("test").QueryRow().Scan(nil), ErrRunnerNotQueryRunner)
 }
 
 func TestStatementBuilderWhere(t *testing.T) {
 	sb := StatementBuilder.Where("x = ?", 1)
 
-	sql, args, err := sb.Select("test").Where("y = ?", 2).ToSql()
+	sql, args, err := sb.Select("test").Where("y = ?", 2).ToSQL()
 	assert.NoError(t, err)
 
-	expectedSql := "SELECT test WHERE x = ? AND y = ?"
-	assert.Equal(t, expectedSql, sql)
+	expectedSQL := "SELECT test WHERE x = ? AND y = ?"
+	assert.Equal(t, expectedSQL, sql)
 
-	expectedArgs := []interface{}{1, 2}
+	expectedArgs := []any{1, 2}
 	assert.Equal(t, expectedArgs, args)
 }

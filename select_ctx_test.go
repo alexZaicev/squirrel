@@ -1,5 +1,4 @@
 //go:build go1.8
-// +build go1.8
 
 package squirrel
 
@@ -13,18 +12,20 @@ func TestSelectBuilderContextRunners(t *testing.T) {
 	db := &DBStub{}
 	b := Select("test").RunWith(db)
 
-	expectedSql := "SELECT test"
+	expectedSQL := "SELECT test"
 
-	b.ExecContext(ctx)
-	assert.Equal(t, expectedSql, db.LastExecSql)
+	_, err := b.ExecContext(ctx)
+	assert.NoError(t, err)
+	assert.Equal(t, expectedSQL, db.LastExecSQL)
 
-	b.QueryContext(ctx)
-	assert.Equal(t, expectedSql, db.LastQuerySql)
+	_, err = b.QueryContext(ctx)
+	assert.NoError(t, err)
+	assert.Equal(t, expectedSQL, db.LastQuerySQL)
 
 	b.QueryRowContext(ctx)
-	assert.Equal(t, expectedSql, db.LastQueryRowSql)
+	assert.Equal(t, expectedSQL, db.LastQueryRowSQL)
 
-	err := b.ScanContext(ctx)
+	err = b.ScanContext(ctx)
 	assert.NoError(t, err)
 }
 
@@ -32,11 +33,11 @@ func TestSelectBuilderContextNoRunner(t *testing.T) {
 	b := Select("test")
 
 	_, err := b.ExecContext(ctx)
-	assert.Equal(t, RunnerNotSet, err)
+	assert.Equal(t, ErrRunnerNotSet, err)
 
 	_, err = b.QueryContext(ctx)
-	assert.Equal(t, RunnerNotSet, err)
+	assert.Equal(t, ErrRunnerNotSet, err)
 
 	err = b.ScanContext(ctx)
-	assert.Equal(t, RunnerNotSet, err)
+	assert.Equal(t, ErrRunnerNotSet, err)
 }

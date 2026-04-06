@@ -10,7 +10,7 @@ fmt:
 	$(GCI) write -s Standard -s Default \
 		-s 'Prefix(github.com)' \
 		.
-	$(GOIMPORTS) -local luminor.com/afcaml -w .
+	$(GOIMPORTS) -local github.com/alexZaicev -w .
 
 .PHONY: lint
 lint:

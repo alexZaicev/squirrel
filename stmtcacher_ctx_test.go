@@ -1,5 +1,4 @@
 //go:build go1.8
-// +build go1.8
 
 package squirrel
 
@@ -14,9 +13,11 @@ func TestStmtCacherPrepareContext(t *testing.T) {
 	sc := NewStmtCache(db)
 	query := "SELECT 1"
 
-	sc.PrepareContext(ctx, query)
-	assert.Equal(t, query, db.LastPrepareSql)
+	_, err := sc.PrepareContext(ctx, query)
+	assert.NoError(t, err)
+	assert.Equal(t, query, db.LastPrepareSQL)
 
-	sc.PrepareContext(ctx, query)
+	_, err = sc.PrepareContext(ctx, query)
+	assert.NoError(t, err)
 	assert.Equal(t, 1, db.PrepareCount, "expected 1 Prepare, got %d", db.PrepareCount)
 }

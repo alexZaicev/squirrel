@@ -17,7 +17,7 @@ const (
 
 type expr struct {
 	sql  string
-	args []interface{}
+	args []any
 }
 
 // Expr builds an expression from a SQL fragment and arguments.
@@ -25,11 +25,11 @@ type expr struct {
 // Ex:
 //
 //	Expr("FROM_UNIXTIME(?)", t)
-func Expr(sql string, args ...interface{}) Sqlizer {
+func Expr(sql string, args ...any) Sqlizer {
 	return expr{sql: sql, args: args}
 }
 
-func (e expr) ToSql() (sql string, args []interface{}, err error) {
+func (e expr) ToSQL() (sql string, args []any, err error) {
 	simple := true
 	for _, arg := range e.args {
 		if _, ok := arg.(Sqlizer); ok {
@@ -45,7 +45,7 @@ func (e expr) ToSql() (sql string, args []interface{}, err error) {
 	sp := e.sql
 
 	var isql string
-	var iargs []interface{}
+	var iargs []any
 
 	for err == nil && len(ap) > 0 && len(sp) > 0 {
 		i := strings.Index(sp, "?")
@@ -62,7 +62,7 @@ func (e expr) ToSql() (sql string, args []interface{}, err error) {
 
 		if as, ok := ap[0].(Sqlizer); ok {
 			// sqlizer argument; expand it and append the result
-			isql, iargs, err = as.ToSql()
+			isql, iargs, err = as.ToSQL()
 			buf.WriteString(sp[:i])
 			buf.WriteString(isql)
 			args = append(args, iargs...)
@@ -82,19 +82,19 @@ func (e expr) ToSql() (sql string, args []interface{}, err error) {
 	return buf.String(), append(args, ap...), err
 }
 
-type concatExpr []interface{}
+type concatExpr []any
 
-func (ce concatExpr) ToSql() (sql string, args []interface{}, err error) {
+func (ce concatExpr) ToSQL() (sql string, args []any, err error) {
 	for _, part := range ce {
 		switch p := part.(type) {
 		case string:
 			sql += p
 		case Sqlizer:
-			pSql, pArgs, err := p.ToSql()
+			pSQL, pArgs, err := p.ToSQL()
 			if err != nil {
 				return "", nil, err
 			}
-			sql += pSql
+			sql += pSQL
 			args = append(args, pArgs...)
 		default:
 			return "", nil, fmt.Errorf("%#v is not a string or Sqlizer", part)
@@ -109,7 +109,7 @@ func (ce concatExpr) ToSql() (sql string, args []interface{}, err error) {
 //
 //	name_expr := Expr("CONCAT(?, ' ', ?)", firstName, lastName)
 //	ConcatExpr("COALESCE(full_name,", name_expr, ")")
-func ConcatExpr(parts ...interface{}) concatExpr {
+func ConcatExpr(parts ...any) Sqlizer {
 	return concatExpr(parts)
 }
 
@@ -124,12 +124,12 @@ type aliasExpr struct {
 // Ex:
 //
 //	.Column(Alias(caseStmt, "case_column"))
-func Alias(expr Sqlizer, alias string) aliasExpr {
+func Alias(expr Sqlizer, alias string) Sqlizer {
 	return aliasExpr{expr, alias}
 }
 
-func (e aliasExpr) ToSql() (sql string, args []interface{}, err error) {
-	sql, args, err = e.expr.ToSql()
+func (e aliasExpr) ToSQL() (sql string, args []any, err error) {
+	sql, args, err = e.expr.ToSQL()
 	if err == nil {
 		sql = fmt.Sprintf("(%s) AS %s", sql, e.alias)
 	}
@@ -137,9 +137,9 @@ func (e aliasExpr) ToSql() (sql string, args []interface{}, err error) {
 }
 
 // Eq is syntactic sugar for use with Where/Having/Set methods.
-type Eq map[string]interface{}
+type Eq map[string]any
 
-func (eq Eq) toSQL(useNotOpr bool) (sql string, args []interface{}, err error) {
+func (eq Eq) toSQL(useNotOpr bool) (sql string, args []any, err error) {
 	if len(eq) == 0 {
 		// Empty Sql{} evaluates to true.
 		sql = sqlTrue
@@ -190,7 +190,7 @@ func (eq Eq) toSQL(useNotOpr bool) (sql string, args []interface{}, err error) {
 				if valVal.Len() == 0 {
 					expr = inEmptyExpr
 					if args == nil {
-						args = []interface{}{}
+						args = []any{}
 					}
 				} else {
 					for i := 0; i < valVal.Len(); i++ {
@@ -209,7 +209,7 @@ func (eq Eq) toSQL(useNotOpr bool) (sql string, args []interface{}, err error) {
 	return
 }
 
-func (eq Eq) ToSql() (sql string, args []interface{}, err error) {
+func (eq Eq) ToSQL() (sql string, args []any, err error) {
 	return eq.toSQL(false)
 }
 
@@ -219,7 +219,7 @@ func (eq Eq) ToSql() (sql string, args []interface{}, err error) {
 //	.Where(NotEq{"id": 1}) == "id <> 1"
 type NotEq Eq
 
-func (neq NotEq) ToSql() (sql string, args []interface{}, err error) {
+func (neq NotEq) ToSQL() (sql string, args []any, err error) {
 	return Eq(neq).toSQL(true)
 }
 
@@ -227,9 +227,9 @@ func (neq NotEq) ToSql() (sql string, args []interface{}, err error) {
 // Ex:
 //
 //	.Where(Like{"name": "%irrel"})
-type Like map[string]interface{}
+type Like map[string]any
 
-func (lk Like) toSql(opr string) (sql string, args []interface{}, err error) {
+func (lk Like) toSQL(opr string) (sql string, args []any, err error) {
 	var exprs []string
 	for key, val := range lk {
 		expr := ""
@@ -244,23 +244,21 @@ func (lk Like) toSql(opr string) (sql string, args []interface{}, err error) {
 		if val == nil {
 			err = fmt.Errorf("cannot use null with like operators")
 			return
-		} else {
-			if isListType(val) {
-				err = fmt.Errorf("cannot use array or slice with like operators")
-				return
-			} else {
-				expr = fmt.Sprintf("%s %s ?", key, opr)
-				args = append(args, val)
-			}
 		}
+		if isListType(val) {
+			err = fmt.Errorf("cannot use array or slice with like operators")
+			return
+		}
+		expr = fmt.Sprintf("%s %s ?", key, opr)
+		args = append(args, val)
 		exprs = append(exprs, expr)
 	}
 	sql = strings.Join(exprs, " AND ")
 	return
 }
 
-func (lk Like) ToSql() (sql string, args []interface{}, err error) {
-	return lk.toSql("LIKE")
+func (lk Like) ToSQL() (sql string, args []any, err error) {
+	return lk.toSQL("LIKE")
 }
 
 // NotLike is syntactic sugar for use with LIKE conditions.
@@ -269,8 +267,8 @@ func (lk Like) ToSql() (sql string, args []interface{}, err error) {
 //	.Where(NotLike{"name": "%irrel"})
 type NotLike Like
 
-func (nlk NotLike) ToSql() (sql string, args []interface{}, err error) {
-	return Like(nlk).toSql("NOT LIKE")
+func (nlk NotLike) ToSQL() (sql string, args []any, err error) {
+	return Like(nlk).toSQL("NOT LIKE")
 }
 
 // ILike is syntactic sugar for use with ILIKE conditions.
@@ -279,8 +277,8 @@ func (nlk NotLike) ToSql() (sql string, args []interface{}, err error) {
 //	.Where(ILike{"name": "sq%"})
 type ILike Like
 
-func (ilk ILike) ToSql() (sql string, args []interface{}, err error) {
-	return Like(ilk).toSql("ILIKE")
+func (ilk ILike) ToSQL() (sql string, args []any, err error) {
+	return Like(ilk).toSQL("ILIKE")
 }
 
 // NotILike is syntactic sugar for use with ILIKE conditions.
@@ -289,17 +287,17 @@ func (ilk ILike) ToSql() (sql string, args []interface{}, err error) {
 //	.Where(NotILike{"name": "sq%"})
 type NotILike Like
 
-func (nilk NotILike) ToSql() (sql string, args []interface{}, err error) {
-	return Like(nilk).toSql("NOT ILIKE")
+func (nilk NotILike) ToSQL() (sql string, args []any, err error) {
+	return Like(nilk).toSQL("NOT ILIKE")
 }
 
 // Lt is syntactic sugar for use with Where/Having/Set methods.
 // Ex:
 //
 //	.Where(Lt{"id": 1})
-type Lt map[string]interface{}
+type Lt map[string]any
 
-func (lt Lt) toSql(opposite, orEq bool) (sql string, args []interface{}, err error) {
+func (lt Lt) toSQL(opposite, orEq bool) (sql string, args []any, err error) {
 	var (
 		exprs []string
 		opr   = "<"
@@ -342,8 +340,8 @@ func (lt Lt) toSql(opposite, orEq bool) (sql string, args []interface{}, err err
 	return
 }
 
-func (lt Lt) ToSql() (sql string, args []interface{}, err error) {
-	return lt.toSql(false, false)
+func (lt Lt) ToSQL() (sql string, args []any, err error) {
+	return lt.toSQL(false, false)
 }
 
 // LtOrEq is syntactic sugar for use with Where/Having/Set methods.
@@ -352,8 +350,8 @@ func (lt Lt) ToSql() (sql string, args []interface{}, err error) {
 //	.Where(LtOrEq{"id": 1}) == "id <= 1"
 type LtOrEq Lt
 
-func (ltOrEq LtOrEq) ToSql() (sql string, args []interface{}, err error) {
-	return Lt(ltOrEq).toSql(false, true)
+func (ltOrEq LtOrEq) ToSQL() (sql string, args []any, err error) {
+	return Lt(ltOrEq).toSQL(false, true)
 }
 
 // Gt is syntactic sugar for use with Where/Having/Set methods.
@@ -362,8 +360,8 @@ func (ltOrEq LtOrEq) ToSql() (sql string, args []interface{}, err error) {
 //	.Where(Gt{"id": 1}) == "id > 1"
 type Gt Lt
 
-func (gt Gt) ToSql() (sql string, args []interface{}, err error) {
-	return Lt(gt).toSql(true, false)
+func (gt Gt) ToSQL() (sql string, args []any, err error) {
+	return Lt(gt).toSQL(true, false)
 }
 
 // GtOrEq is syntactic sugar for use with Where/Having/Set methods.
@@ -372,19 +370,19 @@ func (gt Gt) ToSql() (sql string, args []interface{}, err error) {
 //	.Where(GtOrEq{"id": 1}) == "id >= 1"
 type GtOrEq Lt
 
-func (gtOrEq GtOrEq) ToSql() (sql string, args []interface{}, err error) {
-	return Lt(gtOrEq).toSql(true, true)
+func (gtOrEq GtOrEq) ToSQL() (sql string, args []any, err error) {
+	return Lt(gtOrEq).toSQL(true, true)
 }
 
 type conj []Sqlizer
 
-func (c conj) join(sep, defaultExpr string) (sql string, args []interface{}, err error) {
+func (c conj) join(sep, defaultExpr string) (sql string, args []any, err error) {
 	if len(c) == 0 {
-		return defaultExpr, []interface{}{}, nil
+		return defaultExpr, []any{}, nil
 	}
 	var sqlParts []string
 	for _, sqlizer := range c {
-		partSQL, partArgs, err := nestedToSql(sqlizer)
+		partSQL, partArgs, err := nestedToSQL(sqlizer)
 		if err != nil {
 			return "", nil, err
 		}
@@ -402,18 +400,18 @@ func (c conj) join(sep, defaultExpr string) (sql string, args []interface{}, err
 // And conjunction Sqlizers
 type And conj
 
-func (a And) ToSql() (string, []interface{}, error) {
+func (a And) ToSQL() (string, []any, error) {
 	return conj(a).join(" AND ", sqlTrue)
 }
 
 // Or conjunction Sqlizers
 type Or conj
 
-func (o Or) ToSql() (string, []interface{}, error) {
+func (o Or) ToSQL() (string, []any, error) {
 	return conj(o).join(" OR ", sqlFalse)
 }
 
-func getSortedKeys(exp map[string]interface{}) []string {
+func getSortedKeys(exp map[string]any) []string {
 	sortedKeys := make([]string, 0, len(exp))
 	for k := range exp {
 		sortedKeys = append(sortedKeys, k)
@@ -422,7 +420,7 @@ func getSortedKeys(exp map[string]interface{}) []string {
 	return sortedKeys
 }
 
-func isListType(val interface{}) bool {
+func isListType(val any) bool {
 	if driver.IsValue(val) {
 		return false
 	}

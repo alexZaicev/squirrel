@@ -1,5 +1,4 @@
 //go:build go1.8
-// +build go1.8
 
 package squirrel
 
@@ -12,25 +11,25 @@ import (
 )
 
 func (s *DBStub) PrepareContext(ctx context.Context, query string) (*sql.Stmt, error) {
-	s.LastPrepareSql = query
+	s.LastPrepareSQL = query
 	s.PrepareCount++
 	return nil, nil
 }
 
-func (s *DBStub) ExecContext(ctx context.Context, query string, args ...interface{}) (sql.Result, error) {
-	s.LastExecSql = query
+func (s *DBStub) ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error) {
+	s.LastExecSQL = query
 	s.LastExecArgs = args
 	return nil, nil
 }
 
-func (s *DBStub) QueryContext(ctx context.Context, query string, args ...interface{}) (*sql.Rows, error) {
-	s.LastQuerySql = query
+func (s *DBStub) QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error) {
+	s.LastQuerySQL = query
 	s.LastQueryArgs = args
 	return nil, nil
 }
 
-func (s *DBStub) QueryRowContext(ctx context.Context, query string, args ...interface{}) RowScanner {
-	s.LastQueryRowSql = query
+func (s *DBStub) QueryRowContext(ctx context.Context, query string, args ...any) RowScanner {
+	s.LastQueryRowSQL = query
 	s.LastQueryRowArgs = args
 	return &Row{RowScanner: &RowStub{}}
 }
@@ -39,18 +38,20 @@ var ctx = context.Background()
 
 func TestExecContextWith(t *testing.T) {
 	db := &DBStub{}
-	ExecContextWith(ctx, db, sqlizer)
-	assert.Equal(t, sqlStr, db.LastExecSql)
+	_, err := ExecContextWith(ctx, db, sqlizer)
+	assert.NoError(t, err)
+	assert.Equal(t, sqlStr, db.LastExecSQL)
 }
 
 func TestQueryContextWith(t *testing.T) {
 	db := &DBStub{}
-	QueryContextWith(ctx, db, sqlizer)
-	assert.Equal(t, sqlStr, db.LastQuerySql)
+	_, err := QueryContextWith(ctx, db, sqlizer)
+	assert.NoError(t, err)
+	assert.Equal(t, sqlStr, db.LastQuerySQL)
 }
 
 func TestQueryRowContextWith(t *testing.T) {
 	db := &DBStub{}
 	QueryRowContextWith(ctx, db, sqlizer)
-	assert.Equal(t, sqlStr, db.LastQueryRowSql)
+	assert.Equal(t, sqlStr, db.LastQueryRowSQL)
 }

@@ -21,10 +21,10 @@ func TestUpdateBuilderToSql(t *testing.T) {
 		Offset(5).
 		Suffix("RETURNING ?", 6)
 
-	sql, args, err := b.ToSql()
+	sql, args, err := b.ToSQL()
 	assert.NoError(t, err)
 
-	expectedSql := "WITH prefix AS ? " +
+	expectedSQL := "WITH prefix AS ? " +
 		"UPDATE a SET b = ? + 1, c = ?, " +
 		"c1 = CASE status WHEN 1 THEN 2 WHEN 2 THEN 1 END, " +
 		"c2 = CASE WHEN a = 2 THEN ? WHEN a = 3 THEN ? END, " +
@@ -32,17 +32,17 @@ func TestUpdateBuilderToSql(t *testing.T) {
 		"WHERE d = ? " +
 		"ORDER BY e LIMIT 4 OFFSET 5 " +
 		"RETURNING ?"
-	assert.Equal(t, expectedSql, sql)
+	assert.Equal(t, expectedSQL, sql)
 
-	expectedArgs := []interface{}{0, 1, 2, "foo", "bar", 3, 6}
+	expectedArgs := []any{0, 1, 2, "foo", "bar", 3, 6}
 	assert.Equal(t, expectedArgs, args)
 }
 
 func TestUpdateBuilderToSqlErr(t *testing.T) {
-	_, _, err := Update("").Set("x", 1).ToSql()
+	_, _, err := Update("").Set("x", 1).ToSQL()
 	assert.Error(t, err)
 
-	_, _, err = Update("x").ToSql()
+	_, _, err = Update("x").ToSQL()
 	assert.Error(t, err)
 }
 
@@ -52,16 +52,16 @@ func TestUpdateBuilderMustSql(t *testing.T) {
 			t.Errorf("TestUpdateBuilderMustSql should have panicked!")
 		}
 	}()
-	Update("").MustSql()
+	Update("").MustSQL()
 }
 
 func TestUpdateBuilderPlaceholders(t *testing.T) {
 	b := Update("test").SetMap(Eq{"x": 1, "y": 2})
 
-	sql, _, _ := b.PlaceholderFormat(Question).ToSql()
+	sql, _, _ := b.PlaceholderFormat(Question).ToSQL()
 	assert.Equal(t, "UPDATE test SET x = ?, y = ?", sql)
 
-	sql, _, _ = b.PlaceholderFormat(Dollar).ToSql()
+	sql, _, _ = b.PlaceholderFormat(Dollar).ToSQL()
 	assert.Equal(t, "UPDATE test SET x = $1, y = $2", sql)
 }
 
@@ -69,21 +69,22 @@ func TestUpdateBuilderRunners(t *testing.T) {
 	db := &DBStub{}
 	b := Update("test").Set("x", 1).RunWith(db)
 
-	expectedSql := "UPDATE test SET x = ?"
+	expectedSQL := "UPDATE test SET x = ?"
 
-	b.Exec()
-	assert.Equal(t, expectedSql, db.LastExecSql)
+	_, err := b.Exec()
+	assert.NoError(t, err)
+	assert.Equal(t, expectedSQL, db.LastExecSQL)
 }
 
 func TestUpdateBuilderNoRunner(t *testing.T) {
 	b := Update("test").Set("x", 1)
 
 	_, err := b.Exec()
-	assert.Equal(t, RunnerNotSet, err)
+	assert.Equal(t, ErrRunnerNotSet, err)
 }
 
 func TestUpdateBuilderFrom(t *testing.T) {
-	sql, _, err := Update("employees").Set("sales_count", 100).From("accounts").Where("accounts.name = ?", "ACME").ToSql()
+	sql, _, err := Update("employees").Set("sales_count", 100).From("accounts").Where("accounts.name = ?", "ACME").ToSQL()
 	assert.NoError(t, err)
 	assert.Equal(t, "UPDATE employees SET sales_count = ? FROM accounts WHERE accounts.name = ?", sql)
 }
@@ -94,12 +95,12 @@ func TestUpdateBuilderFromSelect(t *testing.T) {
 		FromSelect(Select("id").
 			From("accounts").
 			Where("accounts.name = ?", "ACME"), "subquery").
-		Where("employees.account_id = subquery.id").ToSql()
+		Where("employees.account_id = subquery.id").ToSQL()
 	assert.NoError(t, err)
 
-	expectedSql := "UPDATE employees " +
+	expectedSQL := "UPDATE employees " +
 		"SET sales_count = ? " +
 		"FROM (SELECT id FROM accounts WHERE accounts.name = ?) AS subquery " +
 		"WHERE employees.account_id = subquery.id"
-	assert.Equal(t, expectedSql, sql)
+	assert.Equal(t, expectedSQL, sql)
 }

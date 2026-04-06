@@ -10,43 +10,41 @@ import (
 )
 
 type DBStub struct {
-	err error
-
-	LastPrepareSql string
+	LastPrepareSQL string
 	PrepareCount   int
 
-	LastExecSql  string
-	LastExecArgs []interface{}
+	LastExecSQL  string
+	LastExecArgs []any
 
-	LastQuerySql  string
-	LastQueryArgs []interface{}
+	LastQuerySQL  string
+	LastQueryArgs []any
 
-	LastQueryRowSql  string
-	LastQueryRowArgs []interface{}
+	LastQueryRowSQL  string
+	LastQueryRowArgs []any
 }
 
-var StubError = fmt.Errorf("this is a stub; this is only a stub")
+var ErrStub = fmt.Errorf("this is a stub; this is only a stub")
 
 func (s *DBStub) Prepare(query string) (*sql.Stmt, error) {
-	s.LastPrepareSql = query
+	s.LastPrepareSQL = query
 	s.PrepareCount++
 	return nil, nil
 }
 
-func (s *DBStub) Exec(query string, args ...interface{}) (sql.Result, error) {
-	s.LastExecSql = query
+func (s *DBStub) Exec(query string, args ...any) (sql.Result, error) {
+	s.LastExecSQL = query
 	s.LastExecArgs = args
 	return nil, nil
 }
 
-func (s *DBStub) Query(query string, args ...interface{}) (*sql.Rows, error) {
-	s.LastQuerySql = query
+func (s *DBStub) Query(query string, args ...any) (*sql.Rows, error) {
+	s.LastQuerySQL = query
 	s.LastQueryArgs = args
 	return nil, nil
 }
 
-func (s *DBStub) QueryRow(query string, args ...interface{}) RowScanner {
-	s.LastQueryRowSql = query
+func (s *DBStub) QueryRow(query string, args ...any) RowScanner {
+	s.LastQueryRowSQL = query
 	s.LastQueryRowArgs = args
 	return &Row{RowScanner: &RowStub{}}
 }
@@ -58,20 +56,22 @@ var (
 
 func TestExecWith(t *testing.T) {
 	db := &DBStub{}
-	ExecWith(db, sqlizer)
-	assert.Equal(t, sqlStr, db.LastExecSql)
+	_, err := ExecWith(db, sqlizer)
+	assert.NoError(t, err)
+	assert.Equal(t, sqlStr, db.LastExecSQL)
 }
 
 func TestQueryWith(t *testing.T) {
 	db := &DBStub{}
-	QueryWith(db, sqlizer)
-	assert.Equal(t, sqlStr, db.LastQuerySql)
+	_, err := QueryWith(db, sqlizer)
+	assert.NoError(t, err)
+	assert.Equal(t, sqlStr, db.LastQuerySQL)
 }
 
 func TestQueryRowWith(t *testing.T) {
 	db := &DBStub{}
 	QueryRowWith(db, sqlizer)
-	assert.Equal(t, sqlStr, db.LastQueryRowSql)
+	assert.Equal(t, sqlStr, db.LastQueryRowSQL)
 }
 
 func TestWithToSqlErr(t *testing.T) {
@@ -204,5 +204,5 @@ func TestDebugSqlizerErrors(t *testing.T) {
 	assert.True(t, strings.HasPrefix(errorMsg, "[DebugSqlizer error: "))
 
 	errorMsg = DebugSqlizer(Lt{"x": nil}) // Cannot use nil values with Lt
-	assert.True(t, strings.HasPrefix(errorMsg, "[ToSql error: "))
+	assert.True(t, strings.HasPrefix(errorMsg, "[ToSQL error: "))
 }

@@ -1,5 +1,4 @@
 //go:build go1.8
-// +build go1.8
 
 package squirrel
 
@@ -12,36 +11,36 @@ import (
 
 func (d *deleteData) ExecContext(ctx context.Context) (sql.Result, error) {
 	if d.RunWith == nil {
-		return nil, RunnerNotSet
+		return nil, ErrRunnerNotSet
 	}
 	ctxRunner, ok := d.RunWith.(ExecerContext)
 	if !ok {
-		return nil, NoContextSupport
+		return nil, ErrNoContextSupport
 	}
 	return ExecContextWith(ctx, ctxRunner, d)
 }
 
 func (d *deleteData) QueryContext(ctx context.Context) (*sql.Rows, error) {
 	if d.RunWith == nil {
-		return nil, RunnerNotSet
+		return nil, ErrRunnerNotSet
 	}
 	ctxRunner, ok := d.RunWith.(QueryerContext)
 	if !ok {
-		return nil, NoContextSupport
+		return nil, ErrNoContextSupport
 	}
 	return QueryContextWith(ctx, ctxRunner, d)
 }
 
 func (d *deleteData) QueryRowContext(ctx context.Context) RowScanner {
 	if d.RunWith == nil {
-		return &Row{err: RunnerNotSet}
+		return &Row{err: ErrRunnerNotSet}
 	}
 	queryRower, ok := d.RunWith.(QueryRowerContext)
 	if !ok {
 		if _, ok := d.RunWith.(QueryerContext); !ok {
-			return &Row{err: RunnerNotQueryRunner}
+			return &Row{err: ErrRunnerNotQueryRunner}
 		}
-		return &Row{err: NoContextSupport}
+		return &Row{err: ErrNoContextSupport}
 	}
 	return QueryRowContextWith(ctx, queryRower, d)
 }
@@ -65,6 +64,6 @@ func (b DeleteBuilder) QueryRowContext(ctx context.Context) RowScanner {
 }
 
 // ScanContext is a shortcut for QueryRowContext().Scan.
-func (b DeleteBuilder) ScanContext(ctx context.Context, dest ...interface{}) error {
+func (b DeleteBuilder) ScanContext(ctx context.Context, dest ...any) error {
 	return b.QueryRowContext(ctx).Scan(dest...)
 }
