@@ -547,3 +547,213 @@ func TestUpdateBuilderJoinWithFrom(t *testing.T) {
 	expectedSQL := "UPDATE t1 JOIN t2 ON t1.id = t2.t1_id SET t1.name = ? FROM t3 WHERE t3.id = t2.t3_id"
 	assert.Equal(t, expectedSQL, sql)
 }
+
+// ---------------------------------------------------------------------------
+// FROM (VALUES ...)
+// ---------------------------------------------------------------------------
+
+func TestUpdateBuilderFromValues(t *testing.T) {
+	sql, args, err := Update("employees").
+		Set("name", Expr("v.name")).
+		FromValues(
+			[][]interface{}{{1, "Alice"}, {2, "Bob"}},
+			"v", "id", "name",
+		).
+		Where("employees.id = v.id").
+		ToSQL()
+	assert.NoError(t, err)
+
+	expectedSQL := "UPDATE employees SET name = v.name " +
+		"FROM (VALUES (?::bigint, ?::text), (?, ?)) AS v(id, name) " +
+		"WHERE employees.id = v.id"
+	assert.Equal(t, expectedSQL, sql)
+
+	expectedArgs := []interface{}{1, "Alice", 2, "Bob"}
+	assert.Equal(t, expectedArgs, args)
+}
+
+func TestUpdateBuilderFromValuesSingleRow(t *testing.T) {
+	sql, args, err := Update("t").
+		Set("name", Expr("v.name")).
+		FromValues(
+			[][]interface{}{{1, "Alice"}},
+			"v", "id", "name",
+		).
+		Where("t.id = v.id").
+		ToSQL()
+	assert.NoError(t, err)
+
+	expectedSQL := "UPDATE t SET name = v.name " +
+		"FROM (VALUES (?::bigint, ?::text)) AS v(id, name) " +
+		"WHERE t.id = v.id"
+	assert.Equal(t, expectedSQL, sql)
+
+	expectedArgs := []interface{}{1, "Alice"}
+	assert.Equal(t, expectedArgs, args)
+}
+
+func TestUpdateBuilderFromValuesDollarPlaceholders(t *testing.T) {
+	sql, args, err := Update("employees").
+		Set("salary", Expr("v.salary")).
+		FromValues(
+			[][]interface{}{{1, 50000}, {2, 60000}},
+			"v", "id", "salary",
+		).
+		Where("employees.id = v.id").
+		PlaceholderFormat(Dollar).
+		ToSQL()
+	assert.NoError(t, err)
+
+	expectedSQL := "UPDATE employees SET salary = v.salary " +
+		"FROM (VALUES ($1::bigint, $2::bigint), ($3, $4)) AS v(id, salary) " +
+		"WHERE employees.id = v.id"
+	assert.Equal(t, expectedSQL, sql)
+
+	expectedArgs := []interface{}{1, 50000, 2, 60000}
+	assert.Equal(t, expectedArgs, args)
+}
+
+func TestUpdateBuilderFromValuesNoColumns(t *testing.T) {
+	sql, args, err := Update("t").
+		Set("a", Expr("v.column1")).
+		FromValues(
+			[][]interface{}{{1, "x"}},
+			"v",
+		).
+		Where("t.id = v.column1").
+		ToSQL()
+	assert.NoError(t, err)
+
+	expectedSQL := "UPDATE t SET a = v.column1 " +
+		"FROM (VALUES (?::bigint, ?::text)) AS v " +
+		"WHERE t.id = v.column1"
+	assert.Equal(t, expectedSQL, sql)
+
+	expectedArgs := []interface{}{1, "x"}
+	assert.Equal(t, expectedArgs, args)
+}
+
+func TestUpdateBuilderFromValuesEmptyRowsErr(t *testing.T) {
+	_, _, err := Update("t").
+		Set("a", 1).
+		FromValues([][]interface{}{}, "v", "id").
+		ToSQL()
+	assert.Error(t, err)
+}
+
+func TestUpdateBuilderFromValuesEmptyAliasErr(t *testing.T) {
+	_, _, err := Update("t").
+		Set("a", 1).
+		FromValues([][]interface{}{{1}}, "", "id").
+		ToSQL()
+	assert.Error(t, err)
+}
+
+func TestUpdateBuilderFromValuesMultipleSetClauses(t *testing.T) {
+	sql, args, err := Update("employees").
+		Set("name", Expr("v.name")).
+		Set("salary", Expr("v.salary")).
+		FromValues(
+			[][]interface{}{{1, "Alice", 50000}, {2, "Bob", 60000}},
+			"v", "id", "name", "salary",
+		).
+		Where("employees.id = v.id").
+		ToSQL()
+	assert.NoError(t, err)
+
+	expectedSQL := "UPDATE employees SET name = v.name, salary = v.salary " +
+		"FROM (VALUES (?::bigint, ?::text, ?::bigint), (?, ?, ?)) AS v(id, name, salary) " +
+		"WHERE employees.id = v.id"
+	assert.Equal(t, expectedSQL, sql)
+
+	expectedArgs := []interface{}{1, "Alice", 50000, 2, "Bob", 60000}
+	assert.Equal(t, expectedArgs, args)
+}
+
+func TestUpdateBuilderFromValuesWithReturning(t *testing.T) {
+	sql, args, err := Update("employees").
+		Set("name", Expr("v.name")).
+		FromValues(
+			[][]interface{}{{1, "Alice"}},
+			"v", "id", "name",
+		).
+		Where("employees.id = v.id").
+		Returning("employees.id", "employees.name").
+		PlaceholderFormat(Dollar).
+		ToSQL()
+	assert.NoError(t, err)
+
+	expectedSQL := "UPDATE employees SET name = v.name " +
+		"FROM (VALUES ($1::bigint, $2::text)) AS v(id, name) " +
+		"WHERE employees.id = v.id " +
+		"RETURNING employees.id, employees.name"
+	assert.Equal(t, expectedSQL, sql)
+
+	expectedArgs := []interface{}{1, "Alice"}
+	assert.Equal(t, expectedArgs, args)
+}
+
+func TestUpdateBuilderFromValuesMixedSetAndValues(t *testing.T) {
+	// Mix regular Set with Expr referencing the VALUES alias.
+	sql, args, err := Update("t").
+		Set("a", 1).
+		Set("b", Expr("v.b")).
+		FromValues(
+			[][]interface{}{{10, "x"}, {20, "y"}},
+			"v", "id", "b",
+		).
+		Where("t.id = v.id").
+		PlaceholderFormat(Dollar).
+		ToSQL()
+	assert.NoError(t, err)
+
+	expectedSQL := "UPDATE t SET a = $1, b = v.b " +
+		"FROM (VALUES ($2::bigint, $3::text), ($4, $5)) AS v(id, b) " +
+		"WHERE t.id = v.id"
+	assert.Equal(t, expectedSQL, sql)
+
+	expectedArgs := []interface{}{1, 10, "x", 20, "y"}
+	assert.Equal(t, expectedArgs, args)
+}
+
+func TestUpdateBuilderFromValuesColonPlaceholders(t *testing.T) {
+	sql, args, err := Update("t").
+		Set("name", Expr("v.name")).
+		FromValues(
+			[][]interface{}{{1, "Alice"}, {2, "Bob"}},
+			"v", "id", "name",
+		).
+		Where("t.id = v.id").
+		PlaceholderFormat(Colon).
+		ToSQL()
+	assert.NoError(t, err)
+
+	expectedSQL := "UPDATE t SET name = v.name " +
+		"FROM (VALUES (:1::bigint, :2::text), (:3, :4)) AS v(id, name) " +
+		"WHERE t.id = v.id"
+	assert.Equal(t, expectedSQL, sql)
+
+	expectedArgs := []interface{}{1, "Alice", 2, "Bob"}
+	assert.Equal(t, expectedArgs, args)
+}
+
+func TestUpdateBuilderFromValuesAtPPlaceholders(t *testing.T) {
+	sql, args, err := Update("t").
+		Set("name", Expr("v.name")).
+		FromValues(
+			[][]interface{}{{1, "Alice"}, {2, "Bob"}},
+			"v", "id", "name",
+		).
+		Where("t.id = v.id").
+		PlaceholderFormat(AtP).
+		ToSQL()
+	assert.NoError(t, err)
+
+	expectedSQL := "UPDATE t SET name = v.name " +
+		"FROM (VALUES (@p1::bigint, @p2::text), (@p3, @p4)) AS v(id, name) " +
+		"WHERE t.id = v.id"
+	assert.Equal(t, expectedSQL, sql)
+
+	expectedArgs := []interface{}{1, "Alice", 2, "Bob"}
+	assert.Equal(t, expectedArgs, args)
+}

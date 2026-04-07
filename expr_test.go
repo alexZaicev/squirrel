@@ -1609,3 +1609,83 @@ func TestConcatExprRawSqlizerInterface(t *testing.T) {
 	_, ok := ce.(rawSqlizer)
 	assert.True(t, ok, "concatExpr should implement rawSqlizer")
 }
+
+// ---------------------------------------------------------------------------
+// valuesExpr
+// ---------------------------------------------------------------------------
+
+func TestValuesExprBasic(t *testing.T) {
+	v := valuesExpr{
+		rows:    [][]interface{}{{1, "Alice"}, {2, "Bob"}},
+		alias:   "v",
+		columns: []string{"id", "name"},
+	}
+	sql, args, err := v.ToSQL()
+	assert.NoError(t, err)
+	assert.Equal(t, "(VALUES (?::bigint, ?::text), (?, ?)) AS v(id, name)", sql)
+	assert.Equal(t, []interface{}{1, "Alice", 2, "Bob"}, args)
+}
+
+func TestValuesExprNoColumns(t *testing.T) {
+	v := valuesExpr{
+		rows:  [][]interface{}{{1, "x"}},
+		alias: "v",
+	}
+	sql, args, err := v.ToSQL()
+	assert.NoError(t, err)
+	assert.Equal(t, "(VALUES (?::bigint, ?::text)) AS v", sql)
+	assert.Equal(t, []interface{}{1, "x"}, args)
+}
+
+func TestValuesExprEmptyRowsError(t *testing.T) {
+	v := valuesExpr{
+		rows:  [][]interface{}{},
+		alias: "v",
+	}
+	_, _, err := v.ToSQL()
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "at least one row")
+}
+
+func TestValuesExprEmptyAliasError(t *testing.T) {
+	v := valuesExpr{
+		rows:  [][]interface{}{{1}},
+		alias: "",
+	}
+	_, _, err := v.ToSQL()
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "alias")
+}
+
+func TestValuesExprRawSqlizerInterface(t *testing.T) {
+	v := valuesExpr{
+		rows:  [][]interface{}{{1}},
+		alias: "v",
+	}
+	_, ok := interface{}(v).(rawSqlizer)
+	assert.True(t, ok, "valuesExpr should implement rawSqlizer")
+}
+
+func TestValuesExprToSQLRaw(t *testing.T) {
+	v := valuesExpr{
+		rows:    [][]interface{}{{1, "a"}},
+		alias:   "v",
+		columns: []string{"id", "name"},
+	}
+	sql, args, err := v.toSQLRaw()
+	assert.NoError(t, err)
+	assert.Equal(t, "(VALUES (?::bigint, ?::text)) AS v(id, name)", sql)
+	assert.Equal(t, []interface{}{1, "a"}, args)
+}
+
+func TestValuesExprWithSqlizerValue(t *testing.T) {
+	v := valuesExpr{
+		rows:    [][]interface{}{{1, Expr("NOW()")}},
+		alias:   "v",
+		columns: []string{"id", "ts"},
+	}
+	sql, args, err := v.ToSQL()
+	assert.NoError(t, err)
+	assert.Equal(t, "(VALUES (?::bigint, NOW())) AS v(id, ts)", sql)
+	assert.Equal(t, []interface{}{1}, args)
+}

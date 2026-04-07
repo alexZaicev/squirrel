@@ -180,6 +180,67 @@ Expr("EXISTS (?)", subQuery)
 >
 > **GitHub [#231](https://github.com/Masterminds/squirrel/issues/231)** — "Interface for management Limit, Offset" (opened 2020-02-08). Requests Sqlizer-based limit/offset for more flexibility.
 
+### 1.13 ✅ `UPDATE ... FROM (VALUES ...)` — Bulk Updates (PostgreSQL) — **DONE**
+~~There is no way to perform bulk updates using inline VALUES lists. Users must construct this manually with raw `Suffix`/`Prefix` hacks or execute multiple individual UPDATE statements. PostgreSQL's `UPDATE ... FROM (VALUES ...)` pattern is the standard way to efficiently update multiple rows with different values in a single statement.~~
+
+**Implemented** (April 2026) via a new `FromValues(values [][]interface{}, alias string, columns ...string)` method on `UpdateBuilder` and a new `valuesExpr` internal type in `expr.go`.
+
+**Behavior:**
+- `FromValues(rows, "v", "id", "name")` → `FROM (VALUES (?, ?), (?, ?)) AS v(id, name)`
+- Supports any number of rows and columns
+- Column names are optional — `FromValues(rows, "v")` → `FROM (VALUES (...)) AS v`
+- Values can be literals or `Sqlizer` expressions (e.g., `Expr("NOW()")`)
+- Works with all placeholder formats (`Question`, `Dollar`, `Colon`, `AtP`)
+- Placeholder numbering flows correctly: SET args → FROM VALUES args → WHERE args
+- Composable with `Returning()`, mixed regular `Set()` values, and other clauses
+- `FromValues` replaces any previously set `From` / `FromSelect` (they all set the same `From` field)
+
+**Internal implementation:** The `valuesExpr` type implements both `Sqlizer` and `rawSqlizer` interfaces. The `rawSqlizer` implementation ensures correct placeholder numbering when nested inside the outer UPDATE query — inner `?` placeholders are preserved for the outer `ReplacePlaceholders` pass.
+
+**Error handling:**
+- Empty rows (`[][]interface{}{}`) → descriptive error: "values expression must have at least one row"
+- Empty alias → descriptive error: "values expression must have an alias"
+
+**Example:**
+```go
+sq.Update("employees").
+    Set("name", sq.Expr("v.name")).
+    Set("salary", sq.Expr("v.salary")).
+    FromValues(
+        [][]interface{}{{1, "Alice", 50000}, {2, "Bob", 60000}},
+        "v", "id", "name", "salary",
+    ).
+    Where("employees.id = v.id").
+    PlaceholderFormat(sq.Dollar)
+// UPDATE employees SET name = v.name, salary = v.salary
+//   FROM (VALUES ($1, $2, $3), ($4, $5, $6)) AS v(id, name, salary)
+//   WHERE employees.id = v.id
+```
+
+**Files modified:** `expr.go`, `update.go`, `select.go`, `expr_test.go`, `update_test.go`, `select_test.go`, `insert_test.go`, `example_test.go`, `integration/update_test.go`, `integration/select_test.go`, `integration/insert_test.go`. Unit tests cover: basic usage, single row, Dollar/Colon/AtP placeholders, no columns, empty rows error, empty alias error, multiple SET clauses, RETURNING composition, mixed Set values with VALUES expressions. Expression-level tests cover: `valuesExpr` basic output, no columns, empty rows error, empty alias error, `rawSqlizer` interface verification, `toSQLRaw()` output, and `Sqlizer` values inside rows. SelectBuilder tests cover: basic FROM VALUES, single row, Dollar placeholders, WHERE filtering, no columns, error cases, and JOIN composition. InsertBuilder composition tests cover: INSERT...SELECT FROM VALUES basic, Dollar/Colon/AtP placeholders, WHERE filtering, NOT EXISTS pattern, RETURNING, and ON CONFLICT composition. Integration tests (PostgreSQL only; skipped on SQLite/MySQL): bulk update multiple rows, single row update, no-match scenario, Dollar placeholder SQL verification, mixed regular Set with VALUES expressions, SELECT FROM VALUES with WHERE/JOIN, INSERT...SELECT FROM VALUES basic and single row, INSERT...SELECT with NOT EXISTS deduplication pattern, and Dollar placeholder SQL verification for all builders.
+
+**Also added `SelectBuilder.FromValues()`** — sets the FROM clause of a SELECT to a VALUES expression. This enables `SELECT ... FROM (VALUES ...)` patterns and naturally composes with `InsertBuilder.Select()` for `INSERT ... SELECT FROM (VALUES ...)`:
+
+```go
+// SELECT FROM VALUES — standalone
+sq.Select("v.id", "v.name").
+    FromValues([][]interface{}{{1, "Alice"}, {2, "Bob"}}, "v", "id", "name")
+// SELECT v.id, v.name FROM (VALUES (?, ?), (?, ?)) AS v(id, name)
+
+// INSERT ... SELECT FROM VALUES — bulk insert with deduplication
+sq.Insert("employees").Columns("id", "name").
+    Select(
+        sq.Select("v.id", "v.name").
+            FromValues([][]interface{}{{1, "Alice"}, {2, "Bob"}}, "v", "id", "name").
+            Where(sq.NotExists(sq.Select("1").From("employees e").Where("e.id = v.id"))),
+    )
+// INSERT INTO employees (id,name)
+//   SELECT v.id, v.name FROM (VALUES (?, ?), (?, ?)) AS v(id, name)
+//   WHERE NOT EXISTS (SELECT 1 FROM employees e WHERE e.id = v.id)
+```
+
+> **GitHub [#332](https://github.com/Masterminds/squirrel/issues/332)** — "INSERT ... SELECT FROM (VALUES ...)" (opened 2022-08-15). Now fully supported via `SelectBuilder.FromValues()` composed with `InsertBuilder.Select()`.
+
 ---
 
 ## 2. Critical Security Issues
@@ -560,20 +621,21 @@ if needC {
 
 | Priority | Issue | GitHub |
 |----------|-------|--------|
-| ✅ Done | `UNION` / `UNION ALL` / `INTERSECT` / `EXCEPT` | [#308](https://github.com/Masterminds/squirrel/issues/308) |
-| ✅ Done | Upsert (`ON CONFLICT` / `ON DUPLICATE KEY UPDATE`) | [#372](https://github.com/Masterminds/squirrel/issues/372) |
-| ✅ Done | CTE (`WITH` / `WITH RECURSIVE`) builder | [#271](https://github.com/Masterminds/squirrel/issues/271) |
-| ✅ Done | Parameterized `LIMIT` / `OFFSET` | [#355](https://github.com/Masterminds/squirrel/issues/355) |
-| ✅ Done | Subquery in WHERE IN / expression position | [#299](https://github.com/Masterminds/squirrel/issues/299), [#258](https://github.com/Masterminds/squirrel/issues/258) |
-| ✅ Done | JOIN in DELETE / UPDATE builders | [#257](https://github.com/Masterminds/squirrel/issues/257) |
-| ⭐ High | Common `Where` interface across builders | [#243](https://github.com/Masterminds/squirrel/issues/243) |
-| ⭐ High | `RemoveOrderBy` / `GetOrderBy` | [#369](https://github.com/Masterminds/squirrel/issues/369) |
-| ⭐ High | `JoinSelect` — join against a subquery | [#241](https://github.com/Masterminds/squirrel/issues/241) |
-| ✅ Done | First-class `RETURNING` clause | [#348](https://github.com/Masterminds/squirrel/issues/348) |
-| ✅ Done | Identifier quoting helper + Safe* builder methods | [#328](https://github.com/Masterminds/squirrel/issues/328) |
-| ✅ Done | `NOT` expression helper | — |
-| ✅ Done | `EXISTS` / `NOT EXISTS` expression helpers | — |
-| ✅ Done | `BETWEEN` expression | [#340](https://github.com/Masterminds/squirrel/issues/340) |
+| ✅ Done   | `UNION` / `UNION ALL` / `INTERSECT` / `EXCEPT` | [#308](https://github.com/Masterminds/squirrel/issues/308) |
+| ✅ Done   | Upsert (`ON CONFLICT` / `ON DUPLICATE KEY UPDATE`) | [#372](https://github.com/Masterminds/squirrel/issues/372) |
+| ✅ Done   | CTE (`WITH` / `WITH RECURSIVE`) builder | [#271](https://github.com/Masterminds/squirrel/issues/271) |
+| ✅ Done   | Parameterized `LIMIT` / `OFFSET` | [#355](https://github.com/Masterminds/squirrel/issues/355) |
+| ✅ Done   | `UPDATE ... FROM (VALUES ...)` bulk updates | [#332](https://github.com/Masterminds/squirrel/issues/332) |
+| ✅ Done   | Subquery in WHERE IN / expression position | [#299](https://github.com/Masterminds/squirrel/issues/299), [#258](https://github.com/Masterminds/squirrel/issues/258) |
+| ✅ Done   | JOIN in DELETE / UPDATE builders | [#257](https://github.com/Masterminds/squirrel/issues/257) |
+| ⭐ High   | Common `Where` interface across builders | [#243](https://github.com/Masterminds/squirrel/issues/243) |
+| ⭐ High   | `RemoveOrderBy` / `GetOrderBy` | [#369](https://github.com/Masterminds/squirrel/issues/369) |
+| ⭐ High   | `JoinSelect` — join against a subquery | [#241](https://github.com/Masterminds/squirrel/issues/241) |
+| ✅ Done   | First-class `RETURNING` clause | [#348](https://github.com/Masterminds/squirrel/issues/348) |
+| ✅ Done   | Identifier quoting helper + Safe* builder methods | [#328](https://github.com/Masterminds/squirrel/issues/328) |
+| ✅ Done   | `NOT` expression helper | — |
+| ✅ Done   | `EXISTS` / `NOT EXISTS` expression helpers | — |
+| ✅ Done   | `BETWEEN` expression | [#340](https://github.com/Masterminds/squirrel/issues/340) |
 | ⭐ Medium | Mid-query clause (MS SQL `OUTPUT INSERTED`) | [#348](https://github.com/Masterminds/squirrel/issues/348) |
 | ⭐ Medium | Named/positional placeholder back-references | [#315](https://github.com/Masterminds/squirrel/issues/315) |
 | ⭐ Medium | Mixed raw + parameterized values in `SetMap` | [#377](https://github.com/Masterminds/squirrel/issues/377) |
@@ -581,16 +643,16 @@ if needC {
 | ⭐ Medium | `SetMap` raw-expression values | [#353](https://github.com/Masterminds/squirrel/issues/353) |
 | ⭐ Medium | `Select FROM stored_proc(args...)` | [#306](https://github.com/Masterminds/squirrel/issues/306) |
 | ⭐ Medium | `INSERT...SELECT` with non-string columns | [#365](https://github.com/Masterminds/squirrel/issues/365) |
-| ✅ Done | `FULL OUTER JOIN` | — |
-| ✅ Done | `JOIN ... USING` convenience | — |
-| ⭐ Low | pgvector float-slice formatting | [#366](https://github.com/Masterminds/squirrel/issues/366) |
-| ⭐ Low | `COPY FROM` / `COPY TO` | [#359](https://github.com/Masterminds/squirrel/issues/359) |
-| ⭐ Low | `STRAIGHT_JOIN` | [#254](https://github.com/Masterminds/squirrel/issues/254) |
-| ⭐ Low | `CreateBuilder` (DDL) | [#252](https://github.com/Masterminds/squirrel/issues/252) |
-| ⭐ Low | SQL Server paging | [#356](https://github.com/Masterminds/squirrel/issues/356) |
-| ⭐ Low | Oracle named params | [#309](https://github.com/Masterminds/squirrel/issues/309) |
-| ⭐ Low | Schema validator | [#390](https://github.com/Masterminds/squirrel/issues/390) |
-| ⭐ Low | `INSERT ... SELECT FROM (VALUES ...)` | Niche PostgreSQL pattern. Complex to model generically. |
+| ✅ Done   | `FULL OUTER JOIN` | — |
+| ✅ Done   | `JOIN ... USING` convenience | — |
+| ⭐ Low    | pgvector float-slice formatting | [#366](https://github.com/Masterminds/squirrel/issues/366) |
+| ⭐ Low    | `COPY FROM` / `COPY TO` | [#359](https://github.com/Masterminds/squirrel/issues/359) |
+| ⭐ Low    | `STRAIGHT_JOIN` | [#254](https://github.com/Masterminds/squirrel/issues/254) |
+| ⭐ Low    | `CreateBuilder` (DDL) | [#252](https://github.com/Masterminds/squirrel/issues/252) |
+| ⭐ Low    | SQL Server paging | [#356](https://github.com/Masterminds/squirrel/issues/356) |
+| ⭐ Low    | Oracle named params | [#309](https://github.com/Masterminds/squirrel/issues/309) |
+| ⭐ Low    | Schema validator | [#390](https://github.com/Masterminds/squirrel/issues/390) |
+| ✅ Done   | ~~`INSERT ... SELECT FROM (VALUES ...)`~~ | ✅ Now supported via `SelectBuilder.FromValues()` composed with `InsertBuilder.Select()`. |
 
 ### Maintenance Note
 
