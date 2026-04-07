@@ -590,6 +590,49 @@ func ExampleUpdateBuilder_Returning() {
 	// [Alice 1]
 }
 
+func ExampleUpdateBuilder_Join() {
+	sql, args, _ := sq.Update("orders").
+		Join("customers ON orders.customer_id = customers.id").
+		Set("orders.status", "verified").
+		Where("customers.verified = ?", true).
+		ToSQL()
+	fmt.Println(sql)
+	fmt.Println(args)
+	// Output:
+	// UPDATE orders JOIN customers ON orders.customer_id = customers.id SET orders.status = ? WHERE customers.verified = ?
+	// [verified true]
+}
+
+func ExampleUpdateBuilder_LeftJoin() {
+	sql, args, _ := sq.Update("items").
+		LeftJoin("inventory ON items.id = inventory.item_id").
+		Set("items.in_stock", false).
+		Where("inventory.item_id IS NULL").
+		ToSQL()
+	fmt.Println(sql)
+	fmt.Println(args)
+	// Output:
+	// UPDATE items LEFT JOIN inventory ON items.id = inventory.item_id SET items.in_stock = ? WHERE inventory.item_id IS NULL
+	// [false]
+}
+
+func ExampleUpdateBuilder_JoinClause() {
+	sql, args, _ := sq.Update("orders").
+		JoinClause(
+			sq.JoinExpr("customers").
+				Type(sq.JoinInner).
+				On("orders.customer_id = customers.id").
+				On("customers.active = ?", true),
+		).
+		Set("orders.status", "verified").
+		ToSQL()
+	fmt.Println(sql)
+	fmt.Println(args)
+	// Output:
+	// UPDATE orders JOIN customers ON orders.customer_id = customers.id AND customers.active = ? SET orders.status = ?
+	// [true verified]
+}
+
 // ---------------------------------------------------------------------------
 // DELETE
 // ---------------------------------------------------------------------------
@@ -628,6 +671,46 @@ func ExampleDeleteBuilder_Returning() {
 	fmt.Println(args)
 	// Output:
 	// DELETE FROM users WHERE active = $1 RETURNING id, name
+	// [false]
+}
+
+func ExampleDeleteBuilder_Join() {
+	sql, args, _ := sq.Delete("orders").
+		Join("customers ON orders.customer_id = customers.id").
+		Where("customers.active = ?", false).
+		ToSQL()
+	fmt.Println(sql)
+	fmt.Println(args)
+	// Output:
+	// DELETE orders FROM orders JOIN customers ON orders.customer_id = customers.id WHERE customers.active = ?
+	// [false]
+}
+
+func ExampleDeleteBuilder_Using() {
+	sql, args, _ := sq.Delete("orders").
+		Using("customers").
+		Where("orders.customer_id = customers.id AND customers.active = ?", false).
+		PlaceholderFormat(sq.Dollar).
+		ToSQL()
+	fmt.Println(sql)
+	fmt.Println(args)
+	// Output:
+	// DELETE FROM orders USING customers WHERE orders.customer_id = customers.id AND customers.active = $1
+	// [false]
+}
+
+func ExampleDeleteBuilder_JoinClause() {
+	sql, args, _ := sq.Delete("orders").
+		JoinClause(
+			sq.JoinExpr("customers").
+				On("orders.customer_id = customers.id").
+				On("customers.active = ?", false),
+		).
+		ToSQL()
+	fmt.Println(sql)
+	fmt.Println(args)
+	// Output:
+	// DELETE orders FROM orders JOIN customers ON orders.customer_id = customers.id AND customers.active = ?
 	// [false]
 }
 

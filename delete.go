@@ -14,6 +14,8 @@ type deleteData struct {
 	RunWith           BaseRunner
 	Prefixes          []Sqlizer
 	From              string
+	UsingParts        []Sqlizer
+	Joins             []Sqlizer
 	WhereParts        []Sqlizer
 	OrderBys          []string
 	Limit             *uint64
@@ -56,8 +58,29 @@ func (d *deleteData) toSQLRaw() (sqlStr string, args []any, err error) {
 		sql.WriteString(" ")
 	}
 
-	sql.WriteString("DELETE FROM ")
-	sql.WriteString(d.From)
+	if len(d.Joins) > 0 {
+		// MySQL multi-table DELETE syntax: DELETE t FROM t JOIN ...
+		sql.WriteString("DELETE ")
+		sql.WriteString(d.From)
+		sql.WriteString(" FROM ")
+		sql.WriteString(d.From)
+		sql.WriteString(" ")
+		args, err = appendToSQL(d.Joins, sql, " ", args)
+		if err != nil {
+			return
+		}
+	} else {
+		sql.WriteString("DELETE FROM ")
+		sql.WriteString(d.From)
+	}
+
+	if len(d.UsingParts) > 0 {
+		sql.WriteString(" USING ")
+		args, err = appendToSQL(d.UsingParts, sql, ", ", args)
+		if err != nil {
+			return
+		}
+	}
 
 	if len(d.WhereParts) > 0 {
 		args, err = appendPrefixedToSQL(d.WhereParts, sql, " WHERE ", args)
@@ -168,6 +191,107 @@ func (b DeleteBuilder) PrefixExpr(expr Sqlizer) DeleteBuilder {
 // For dynamic table names from user input, use SafeFrom instead.
 func (b DeleteBuilder) From(from string) DeleteBuilder {
 	return builder.Set(b, "From", from).(DeleteBuilder)
+}
+
+// Using adds a USING clause to the query (PostgreSQL).
+//
+// PostgreSQL DELETE ... USING allows referencing additional tables in the
+// WHERE clause:
+//
+//	Delete("t1").Using("t2").Where("t1.id = t2.t1_id AND t2.active = ?", false)
+//	// DELETE FROM t1 USING t2 WHERE t1.id = t2.t1_id AND t2.active = ?
+//
+// WARNING: The table name is interpolated directly into the SQL string.
+// NEVER pass unsanitized user input to this method.
+func (b DeleteBuilder) Using(tables ...string) DeleteBuilder {
+	parts := make([]any, 0, len(tables))
+	for _, t := range tables {
+		parts = append(parts, newPart(t))
+	}
+	return builder.Extend(b, "UsingParts", parts).(DeleteBuilder)
+}
+
+// JoinClause adds a join clause to the query.
+func (b DeleteBuilder) JoinClause(pred any, args ...any) DeleteBuilder {
+	return builder.Append(b, "Joins", newPart(pred, args...)).(DeleteBuilder)
+}
+
+// Join adds a JOIN clause to the query.
+//
+// WARNING: The join clause is interpolated directly into the SQL string.
+// NEVER pass unsanitized user input to this method.
+func (b DeleteBuilder) Join(join string, rest ...any) DeleteBuilder {
+	return b.JoinClause("JOIN "+join, rest...)
+}
+
+// LeftJoin adds a LEFT JOIN clause to the query.
+//
+// WARNING: The join clause is interpolated directly into the SQL string.
+// NEVER pass unsanitized user input to this method.
+func (b DeleteBuilder) LeftJoin(join string, rest ...any) DeleteBuilder {
+	return b.JoinClause("LEFT JOIN "+join, rest...)
+}
+
+// RightJoin adds a RIGHT JOIN clause to the query.
+//
+// WARNING: The join clause is interpolated directly into the SQL string.
+// NEVER pass unsanitized user input to this method.
+func (b DeleteBuilder) RightJoin(join string, rest ...any) DeleteBuilder {
+	return b.JoinClause("RIGHT JOIN "+join, rest...)
+}
+
+// InnerJoin adds an INNER JOIN clause to the query.
+//
+// WARNING: The join clause is interpolated directly into the SQL string.
+// NEVER pass unsanitized user input to this method.
+func (b DeleteBuilder) InnerJoin(join string, rest ...any) DeleteBuilder {
+	return b.JoinClause("INNER JOIN "+join, rest...)
+}
+
+// CrossJoin adds a CROSS JOIN clause to the query.
+//
+// WARNING: The join clause is interpolated directly into the SQL string.
+// NEVER pass unsanitized user input to this method.
+func (b DeleteBuilder) CrossJoin(join string, rest ...any) DeleteBuilder {
+	return b.JoinClause("CROSS JOIN "+join, rest...)
+}
+
+// FullJoin adds a FULL OUTER JOIN clause to the query.
+//
+// WARNING: The join clause is interpolated directly into the SQL string.
+// NEVER pass unsanitized user input to this method.
+func (b DeleteBuilder) FullJoin(join string, rest ...any) DeleteBuilder {
+	return b.JoinClause("FULL OUTER JOIN "+join, rest...)
+}
+
+// JoinUsing adds a JOIN ... USING clause to the query.
+func (b DeleteBuilder) JoinUsing(table string, columns ...string) DeleteBuilder {
+	return b.JoinClause("JOIN " + table + " USING (" + strings.Join(columns, ", ") + ")")
+}
+
+// LeftJoinUsing adds a LEFT JOIN ... USING clause to the query.
+func (b DeleteBuilder) LeftJoinUsing(table string, columns ...string) DeleteBuilder {
+	return b.JoinClause("LEFT JOIN " + table + " USING (" + strings.Join(columns, ", ") + ")")
+}
+
+// RightJoinUsing adds a RIGHT JOIN ... USING clause to the query.
+func (b DeleteBuilder) RightJoinUsing(table string, columns ...string) DeleteBuilder {
+	return b.JoinClause("RIGHT JOIN " + table + " USING (" + strings.Join(columns, ", ") + ")")
+}
+
+// InnerJoinUsing adds an INNER JOIN ... USING clause to the query.
+func (b DeleteBuilder) InnerJoinUsing(table string, columns ...string) DeleteBuilder {
+	return b.JoinClause("INNER JOIN " + table + " USING (" + strings.Join(columns, ", ") + ")")
+}
+
+// CrossJoinUsing adds a CROSS JOIN ... USING clause to the query.
+func (b DeleteBuilder) CrossJoinUsing(table string, columns ...string) DeleteBuilder {
+	return b.JoinClause("CROSS JOIN " + table + " USING (" + strings.Join(columns, ", ") + ")")
+}
+
+// FullJoinUsing adds a FULL OUTER JOIN ... USING clause to the query.
+func (b DeleteBuilder) FullJoinUsing(table string, columns ...string) DeleteBuilder {
+	return b.JoinClause("FULL OUTER JOIN " + table + " USING (" + strings.Join(columns, ", ") + ")")
 }
 
 // Where adds WHERE expressions to the query.

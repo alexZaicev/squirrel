@@ -879,3 +879,146 @@ func TestUpdateSetMultipleSubqueriesExecution(t *testing.T) {
 	assert.Equal(t, 10, a)
 	assert.Equal(t, 20, b)
 }
+
+// ---------------------------------------------------------------------------
+// JOIN clauses
+// ---------------------------------------------------------------------------
+
+func TestUpdateJoin(t *testing.T) {
+	if isPostgres() {
+		t.Skip("UPDATE ... JOIN is MySQL syntax; PostgreSQL uses UPDATE ... FROM")
+	}
+	if driverName == "sqlite3" {
+		t.Skip("UPDATE ... JOIN is not supported by SQLite")
+	}
+
+	t.Run("BasicJoin", func(t *testing.T) {
+		// Arrange
+		createTable(t, "sq_upd_j1", "(id INTEGER, name TEXT, cat_id INTEGER)")
+		createTable(t, "sq_upd_j1_cat", "(id INTEGER, label TEXT)")
+		seedTable(t, "INSERT INTO sq_upd_j1 VALUES (1, 'old', 10), (2, 'keep', 20)")
+		seedTable(t, "INSERT INTO sq_upd_j1_cat VALUES (10, 'catA'), (20, 'catB')")
+
+		// Act — update name from joined table
+		_, err := sb.Update("sq_upd_j1").
+			Join("sq_upd_j1_cat ON sq_upd_j1.cat_id = sq_upd_j1_cat.id").
+			Set("name", "updated").
+			Where(sqrl.Eq{"sq_upd_j1_cat.label": "catA"}).
+			Exec()
+
+		// Assert
+		require.NoError(t, err)
+
+		names := queryStrings(t, sb.Select("name").From("sq_upd_j1").OrderBy("id"))
+		assert.Equal(t, []string{"updated", "keep"}, names)
+	})
+
+	t.Run("LeftJoin", func(t *testing.T) {
+		// Arrange
+		createTable(t, "sq_upd_lj", "(id INTEGER, name TEXT, ref_id INTEGER)")
+		createTable(t, "sq_upd_lj_ref", "(id INTEGER)")
+		seedTable(t, "INSERT INTO sq_upd_lj VALUES (1, 'a', 10), (2, 'b', 20)")
+		seedTable(t, "INSERT INTO sq_upd_lj_ref VALUES (10)")
+
+		// Act — update rows where the left join has no match (orphans)
+		_, err := sb.Update("sq_upd_lj").
+			LeftJoin("sq_upd_lj_ref ON sq_upd_lj.ref_id = sq_upd_lj_ref.id").
+			Set("name", "orphan").
+			Where("sq_upd_lj_ref.id IS NULL").
+			Exec()
+
+		// Assert — only row 2 (ref_id=20 has no match) is updated
+		require.NoError(t, err)
+
+		names := queryStrings(t, sb.Select("name").From("sq_upd_lj").OrderBy("id"))
+		assert.Equal(t, []string{"a", "orphan"}, names)
+	})
+
+	t.Run("MultipleJoins", func(t *testing.T) {
+		// Arrange
+		createTable(t, "sq_upd_mj", "(id INTEGER, name TEXT, cat_id INTEGER)")
+		createTable(t, "sq_upd_mj_cat", "(id INTEGER, grp_id INTEGER)")
+		createTable(t, "sq_upd_mj_grp", "(id INTEGER, label TEXT)")
+		seedTable(t, "INSERT INTO sq_upd_mj VALUES (1, 'old', 10), (2, 'keep', 20)")
+		seedTable(t, "INSERT INTO sq_upd_mj_cat VALUES (10, 100), (20, 200)")
+		seedTable(t, "INSERT INTO sq_upd_mj_grp VALUES (100, 'grpA'), (200, 'grpB')")
+
+		// Act — join through two tables
+		_, err := sb.Update("sq_upd_mj").
+			Join("sq_upd_mj_cat ON sq_upd_mj.cat_id = sq_upd_mj_cat.id").
+			Join("sq_upd_mj_grp ON sq_upd_mj_cat.grp_id = sq_upd_mj_grp.id").
+			Set("name", "updated").
+			Where(sqrl.Eq{"sq_upd_mj_grp.label": "grpA"}).
+			Exec()
+
+		// Assert
+		require.NoError(t, err)
+
+		names := queryStrings(t, sb.Select("name").From("sq_upd_mj").OrderBy("id"))
+		assert.Equal(t, []string{"updated", "keep"}, names)
+	})
+
+	t.Run("JoinWithPlaceholderArgs", func(t *testing.T) {
+		// Arrange
+		createTable(t, "sq_upd_jp", "(id INTEGER, name TEXT, cat_id INTEGER)")
+		createTable(t, "sq_upd_jp_cat", "(id INTEGER, active INTEGER)")
+		seedTable(t, "INSERT INTO sq_upd_jp VALUES (1, 'old', 10), (2, 'keep', 20)")
+		seedTable(t, "INSERT INTO sq_upd_jp_cat VALUES (10, 1), (20, 0)")
+
+		// Act
+		_, err := sb.Update("sq_upd_jp").
+			Join("sq_upd_jp_cat ON sq_upd_jp.cat_id = sq_upd_jp_cat.id AND sq_upd_jp_cat.active = ?", 1).
+			Set("name", "active").
+			Exec()
+
+		// Assert — only row with active=1 match is updated
+		require.NoError(t, err)
+
+		names := queryStrings(t, sb.Select("name").From("sq_upd_jp").OrderBy("id"))
+		assert.Equal(t, []string{"active", "keep"}, names)
+	})
+}
+
+func TestUpdateJoinSQLGeneration(t *testing.T) {
+	t.Run("JoinDollar", func(t *testing.T) {
+		sql, args, err := sqrl.Update("t1").
+			Join("t2 ON t1.id = t2.t1_id AND t2.status = ?", "active").
+			Set("t1.name", "updated").
+			Where("t1.id = ?", 1).
+			PlaceholderFormat(sqrl.Dollar).
+			ToSQL()
+		require.NoError(t, err)
+		assert.Equal(t,
+			"UPDATE t1 JOIN t2 ON t1.id = t2.t1_id AND t2.status = $1 SET t1.name = $2 WHERE t1.id = $3",
+			sql)
+		assert.Equal(t, []interface{}{"active", "updated", 1}, args)
+	})
+
+	t.Run("JoinExpr", func(t *testing.T) {
+		sql, args, err := sqrl.Update("orders").
+			JoinClause(
+				sqrl.JoinExpr("customers").
+					Type(sqrl.JoinLeft).
+					On("orders.customer_id = customers.id").
+					On("customers.active = ?", true),
+			).
+			Set("orders.status", "verified").
+			Where("orders.id = ?", 1).
+			PlaceholderFormat(sqrl.Dollar).
+			ToSQL()
+		require.NoError(t, err)
+		assert.Equal(t,
+			"UPDATE orders LEFT JOIN customers ON orders.customer_id = customers.id AND customers.active = $1 SET orders.status = $2 WHERE orders.id = $3",
+			sql)
+		assert.Equal(t, []interface{}{true, "verified", 1}, args)
+	})
+
+	t.Run("JoinUsing", func(t *testing.T) {
+		sql, _, err := sqrl.Update("t1").
+			JoinUsing("t2", "id", "region").
+			Set("t1.name", "updated").
+			ToSQL()
+		require.NoError(t, err)
+		assert.Equal(t, "UPDATE t1 JOIN t2 USING (id, region) SET t1.name = ?", sql)
+	})
+}
