@@ -1605,3 +1605,117 @@ func TestInsertSetColumnWithReturning(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, 42, id)
 }
+
+// ---------------------------------------------------------------------------
+// INSERT ... SELECT FROM (VALUES ...)
+// ---------------------------------------------------------------------------
+
+func TestInsertSelectFromValues(t *testing.T) {
+	if isMySQL() || driverName == "sqlite3" {
+		t.Skip("INSERT ... SELECT FROM (VALUES ...) is PostgreSQL-specific")
+	}
+
+	// Arrange
+	createTable(t, "sq_ins_fv", "(id INTEGER, name TEXT)")
+
+	// Act
+	_, err := sb.Insert("sq_ins_fv").
+		Columns("id", "name").
+		Select(
+			sqrl.Select("v.id", "v.name").
+				FromValues(
+					[][]interface{}{{10, "Alice"}, {20, "Bob"}},
+					"v", "id", "name",
+				),
+		).
+		Exec()
+
+	// Assert
+	require.NoError(t, err)
+
+	names := queryStrings(t, sb.Select("name").From("sq_ins_fv").OrderBy("id"))
+	assert.Equal(t, []string{"Alice", "Bob"}, names)
+}
+
+func TestInsertSelectFromValuesSingleRow(t *testing.T) {
+	if isMySQL() || driverName == "sqlite3" {
+		t.Skip("INSERT ... SELECT FROM (VALUES ...) is PostgreSQL-specific")
+	}
+
+	// Arrange
+	createTable(t, "sq_ins_fv1", "(id INTEGER, name TEXT)")
+
+	// Act
+	_, err := sb.Insert("sq_ins_fv1").
+		Columns("id", "name").
+		Select(
+			sqrl.Select("v.id", "v.name").
+				FromValues(
+					[][]interface{}{{1, "solo"}},
+					"v", "id", "name",
+				),
+		).
+		Exec()
+
+	// Assert
+	require.NoError(t, err)
+
+	var name string
+	err = db.QueryRow("SELECT name FROM sq_ins_fv1 WHERE id = 1").Scan(&name)
+	require.NoError(t, err)
+	assert.Equal(t, "solo", name)
+}
+
+func TestInsertSelectFromValuesWithNotExists(t *testing.T) {
+	if isMySQL() || driverName == "sqlite3" {
+		t.Skip("INSERT ... SELECT FROM (VALUES ...) is PostgreSQL-specific")
+	}
+
+	// Arrange
+	createTable(t, "sq_ins_fvne", "(id INTEGER, name TEXT)")
+	seedTable(t, "INSERT INTO sq_ins_fvne VALUES (1, 'existing')")
+
+	// Act — insert only rows where id doesn't already exist
+	_, err := sb.Insert("sq_ins_fvne").
+		Columns("id", "name").
+		Select(
+			sqrl.Select("v.id", "v.name").
+				FromValues(
+					[][]interface{}{{1, "duplicate"}, {2, "new"}},
+					"v", "id", "name",
+				).
+				Where(
+					sqrl.NotExists(
+						sqrl.Select("1").From("sq_ins_fvne e").Where("e.id = v.id"),
+					),
+				),
+		).
+		Exec()
+
+	// Assert
+	require.NoError(t, err)
+
+	names := queryStrings(t, sb.Select("name").From("sq_ins_fvne").OrderBy("id"))
+	assert.Equal(t, []string{"existing", "new"}, names)
+}
+
+func TestInsertSelectFromValuesDollarPlaceholderSQL(t *testing.T) {
+	// Verify SQL generation with Dollar placeholders (no execution needed).
+	sql, args, err := sqrl.Insert("employees").
+		Columns("id", "name").
+		Select(
+			sqrl.Select("v.id", "v.name").
+				FromValues(
+					[][]interface{}{{1, "Alice"}, {2, "Bob"}},
+					"v", "id", "name",
+				),
+		).
+		PlaceholderFormat(sqrl.Dollar).
+		ToSQL()
+	require.NoError(t, err)
+
+	expectedSQL := "INSERT INTO employees (id,name) " +
+		"SELECT v.id, v.name FROM (VALUES ($1::bigint, $2::text), ($3, $4)) AS v(id, name)"
+	assert.Equal(t, expectedSQL, sql)
+	assert.Equal(t, []interface{}{1, "Alice", 2, "Bob"}, args)
+}

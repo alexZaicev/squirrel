@@ -306,6 +306,22 @@ func (b SelectBuilder) FromSelect(from SelectBuilder, alias string) SelectBuilde
 	return builder.Set(b, "From", Alias(from, alias)).(SelectBuilder)
 }
 
+// FromValues sets a VALUES list into the FROM clause of the query.
+// This enables SELECT ... FROM (VALUES ...) patterns, commonly used in
+// PostgreSQL for inline data or as part of INSERT ... SELECT FROM (VALUES ...).
+//
+// Ex:
+//
+//	sq.Select("v.id", "v.name").
+//		FromValues(
+//			[][]interface{}{{1, "Alice"}, {2, "Bob"}},
+//			"v", "id", "name",
+//		)
+//	// SELECT v.id, v.name FROM (VALUES (?, ?), (?, ?)) AS v(id, name)
+func (b SelectBuilder) FromValues(values [][]interface{}, alias string, columns ...string) SelectBuilder {
+	return builder.Set(b, "From", valuesExpr{rows: values, alias: alias, columns: columns}).(SelectBuilder)
+}
+
 // JoinClause adds a join clause to the query.
 func (b SelectBuilder) JoinClause(pred any, args ...any) SelectBuilder {
 	return builder.Append(b, "Joins", newPart(pred, args...)).(SelectBuilder)

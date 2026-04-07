@@ -295,6 +295,25 @@ func (b UpdateBuilder) FromSelect(from SelectBuilder, alias string) UpdateBuilde
 	return builder.Set(b, "From", Alias(from, alias)).(UpdateBuilder)
 }
 
+// FromValues sets a VALUES list into the FROM clause of the query.
+// This enables PostgreSQL-style UPDATE ... FROM (VALUES ...) for bulk updates.
+//
+// Ex:
+//
+//	sq.Update("employees").
+//		Set("name", Expr("v.name")).
+//		FromValues(
+//			[][]interface{}{{1, "Alice"}, {2, "Bob"}},
+//			"v", "id", "name",
+//		).
+//		Where("employees.id = v.id")
+//	// UPDATE employees SET name = v.name
+//	//   FROM (VALUES (?, ?), (?, ?)) AS v(id, name)
+//	//   WHERE employees.id = v.id
+func (b UpdateBuilder) FromValues(values [][]interface{}, alias string, columns ...string) UpdateBuilder {
+	return builder.Set(b, "From", valuesExpr{rows: values, alias: alias, columns: columns}).(UpdateBuilder)
+}
+
 // JoinClause adds a join clause to the query.
 func (b UpdateBuilder) JoinClause(pred any, args ...any) UpdateBuilder {
 	return builder.Append(b, "Joins", newPart(pred, args...)).(UpdateBuilder)

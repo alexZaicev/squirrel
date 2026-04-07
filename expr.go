@@ -625,6 +625,102 @@ func NotExists(subquery Sqlizer) Sqlizer {
 	return existsExpr{sub: subquery, not: true}
 }
 
+// valuesExpr represents a VALUES list with an alias and optional column names.
+// It generates SQL like: (VALUES (?::bigint, ?::text), (?, ?)) AS alias(col1, col2)
+//
+// PostgreSQL treats parameterized VALUES as text by default, so explicit type
+// casts are added to the first row based on Go value types. Subsequent rows
+// inherit types from the first row.
+type valuesExpr struct {
+	rows    [][]interface{}
+	alias   string
+	columns []string
+}
+
+// pgTypeCast returns a PostgreSQL type-cast suffix for the given Go value.
+// Returns an empty string for types that don't need an explicit cast (nil,
+// Sqlizer, or unrecognised types).
+func pgTypeCast(val interface{}) string {
+	switch val.(type) {
+	case int, int8, int16, int32, int64:
+		return "::bigint"
+	case uint, uint16, uint32, uint64:
+		return "::bigint"
+	case float32, float64:
+		return "::double precision"
+	case string:
+		return "::text"
+	case bool:
+		return "::boolean"
+	default:
+		return ""
+	}
+}
+
+func (v valuesExpr) toSQLInner() (sql string, args []interface{}, err error) {
+	if len(v.rows) == 0 {
+		err = fmt.Errorf("values expression must have at least one row")
+		return
+	}
+	if v.alias == "" {
+		err = fmt.Errorf("values expression must have an alias")
+		return
+	}
+
+	buf := &bytes.Buffer{}
+	buf.WriteString("(VALUES ")
+
+	for i, row := range v.rows {
+		if i > 0 {
+			buf.WriteString(", ")
+		}
+		buf.WriteString("(")
+		for j, val := range row {
+			if j > 0 {
+				buf.WriteString(", ")
+			}
+			if s, ok := val.(Sqlizer); ok {
+				vsql, vargs, verr := nestedToSQL(s)
+				if verr != nil {
+					err = verr
+					return
+				}
+				buf.WriteString(vsql)
+				args = append(args, vargs...)
+			} else {
+				buf.WriteString("?")
+				// Add PostgreSQL type casts to the first row so that the
+				// database can infer correct column types for all rows.
+				if i == 0 {
+					buf.WriteString(pgTypeCast(val))
+				}
+				args = append(args, val)
+			}
+		}
+		buf.WriteString(")")
+	}
+
+	buf.WriteString(") AS ")
+	buf.WriteString(v.alias)
+
+	if len(v.columns) > 0 {
+		buf.WriteString("(")
+		buf.WriteString(strings.Join(v.columns, ", "))
+		buf.WriteString(")")
+	}
+
+	sql = buf.String()
+	return
+}
+
+func (v valuesExpr) ToSQL() (sql string, args []interface{}, err error) {
+	return v.toSQLInner()
+}
+
+func (v valuesExpr) toSQLRaw() (sql string, args []interface{}, err error) {
+	return v.toSQLInner()
+}
+
 func getSortedKeys(exp map[string]any) []string {
 	sortedKeys := make([]string, 0, len(exp))
 	for k := range exp {

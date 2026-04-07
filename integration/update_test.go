@@ -1022,3 +1022,160 @@ func TestUpdateJoinSQLGeneration(t *testing.T) {
 		assert.Equal(t, "UPDATE t1 JOIN t2 USING (id, region) SET t1.name = ?", sql)
 	})
 }
+
+// ---------------------------------------------------------------------------
+// FROM (VALUES ...)
+// ---------------------------------------------------------------------------
+
+func TestUpdateFromValues(t *testing.T) {
+	if isMySQL() || driverName == "sqlite3" {
+		t.Skip("UPDATE ... FROM (VALUES ...) is PostgreSQL-specific")
+	}
+
+	// Arrange
+	createTable(t, "sq_upd_fv", "(id INTEGER, name TEXT, price INTEGER)")
+	seedTable(t, "INSERT INTO sq_upd_fv VALUES (1, 'old1', 10), (2, 'old2', 20), (3, 'keep', 30)")
+
+	// Act — bulk update using FROM (VALUES ...)
+	_, err := sb.Update("sq_upd_fv").
+		Set("name", sqrl.Expr("v.name")).
+		Set("price", sqrl.Expr("v.price")).
+		FromValues(
+			[][]interface{}{{1, "new1", 100}, {2, "new2", 200}},
+			"v", "id", "name", "price",
+		).
+		Where("sq_upd_fv.id = v.id").
+		Exec()
+
+	// Assert
+	require.NoError(t, err)
+
+	var name string
+	var price int
+	err = db.QueryRow("SELECT name, price FROM sq_upd_fv WHERE id = 1").Scan(&name, &price)
+	require.NoError(t, err)
+	assert.Equal(t, "new1", name)
+	assert.Equal(t, 100, price)
+
+	err = db.QueryRow("SELECT name, price FROM sq_upd_fv WHERE id = 2").Scan(&name, &price)
+	require.NoError(t, err)
+	assert.Equal(t, "new2", name)
+	assert.Equal(t, 200, price)
+
+	// Row 3 should be untouched.
+	err = db.QueryRow("SELECT name, price FROM sq_upd_fv WHERE id = 3").Scan(&name, &price)
+	require.NoError(t, err)
+	assert.Equal(t, "keep", name)
+	assert.Equal(t, 30, price)
+}
+
+func TestUpdateFromValuesSingleRow(t *testing.T) {
+	if isMySQL() || driverName == "sqlite3" {
+		t.Skip("UPDATE ... FROM (VALUES ...) is PostgreSQL-specific")
+	}
+
+	// Arrange
+	createTable(t, "sq_upd_fv1", "(id INTEGER, name TEXT)")
+	seedTable(t, "INSERT INTO sq_upd_fv1 VALUES (1, 'old')")
+
+	// Act — update a single row
+	_, err := sb.Update("sq_upd_fv1").
+		Set("name", sqrl.Expr("v.name")).
+		FromValues(
+			[][]interface{}{{1, "single"}},
+			"v", "id", "name",
+		).
+		Where("sq_upd_fv1.id = v.id").
+		Exec()
+
+	// Assert
+	require.NoError(t, err)
+
+	var name string
+	err = db.QueryRow("SELECT name FROM sq_upd_fv1 WHERE id = 1").Scan(&name)
+	require.NoError(t, err)
+	assert.Equal(t, "single", name)
+}
+
+func TestUpdateFromValuesNoMatch(t *testing.T) {
+	if isMySQL() || driverName == "sqlite3" {
+		t.Skip("UPDATE ... FROM (VALUES ...) is PostgreSQL-specific")
+	}
+
+	// Arrange
+	createTable(t, "sq_upd_fvnm", "(id INTEGER, name TEXT)")
+	seedTable(t, "INSERT INTO sq_upd_fvnm VALUES (1, 'original')")
+
+	// Act — VALUES id=99 doesn't match any row
+	_, err := sb.Update("sq_upd_fvnm").
+		Set("name", sqrl.Expr("v.name")).
+		FromValues(
+			[][]interface{}{{99, "nomatch"}},
+			"v", "id", "name",
+		).
+		Where("sq_upd_fvnm.id = v.id").
+		Exec()
+
+	// Assert — row should be unchanged
+	require.NoError(t, err)
+
+	var name string
+	err = db.QueryRow("SELECT name FROM sq_upd_fvnm WHERE id = 1").Scan(&name)
+	require.NoError(t, err)
+	assert.Equal(t, "original", name)
+}
+
+func TestUpdateFromValuesDollarPlaceholderSQL(t *testing.T) {
+	// Verify SQL generation with Dollar placeholders (no execution needed).
+	sql, args, err := sqrl.Update("employees").
+		Set("salary", sqrl.Expr("v.salary")).
+		FromValues(
+			[][]interface{}{{1, 50000}, {2, 60000}},
+			"v", "id", "salary",
+		).
+		Where("employees.id = v.id").
+		PlaceholderFormat(sqrl.Dollar).
+		ToSQL()
+	require.NoError(t, err)
+
+	expectedSQL := "UPDATE employees SET salary = v.salary " +
+		"FROM (VALUES ($1::bigint, $2::bigint), ($3, $4)) AS v(id, salary) " +
+		"WHERE employees.id = v.id"
+	assert.Equal(t, expectedSQL, sql)
+	assert.Equal(t, []interface{}{1, 50000, 2, 60000}, args)
+}
+
+func TestUpdateFromValuesMixedSetAndValues(t *testing.T) {
+	if isMySQL() || driverName == "sqlite3" {
+		t.Skip("UPDATE ... FROM (VALUES ...) is PostgreSQL-specific")
+	}
+
+	// Arrange
+	createTable(t, "sq_upd_fvm", "(id INTEGER, name TEXT, flag TEXT)")
+	seedTable(t, "INSERT INTO sq_upd_fvm VALUES (1, 'old', 'no'), (2, 'old', 'no')")
+
+	// Act — mix regular Set value with Expr referencing the VALUES alias.
+	_, err := sb.Update("sq_upd_fvm").
+		Set("flag", "yes").
+		Set("name", sqrl.Expr("v.name")).
+		FromValues(
+			[][]interface{}{{1, "Alice"}, {2, "Bob"}},
+			"v", "id", "name",
+		).
+		Where("sq_upd_fvm.id = v.id").
+		Exec()
+
+	// Assert
+	require.NoError(t, err)
+
+	var name, flag string
+	err = db.QueryRow("SELECT name, flag FROM sq_upd_fvm WHERE id = 1").Scan(&name, &flag)
+	require.NoError(t, err)
+	assert.Equal(t, "Alice", name)
+	assert.Equal(t, "yes", flag)
+
+	err = db.QueryRow("SELECT name, flag FROM sq_upd_fvm WHERE id = 2").Scan(&name, &flag)
+	require.NoError(t, err)
+	assert.Equal(t, "Bob", name)
+	assert.Equal(t, "yes", flag)
+}
