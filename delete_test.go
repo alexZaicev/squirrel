@@ -209,3 +209,196 @@ func TestDeleteBuilderParameterizedLimitPreparedStatementReuse(t *testing.T) {
 	assert.Equal(t, sql1, sql2)
 	assert.Equal(t, "DELETE FROM logs LIMIT ?", sql1)
 }
+
+// ---------------------------------------------------------------------------
+// JOIN clauses
+// ---------------------------------------------------------------------------
+
+func TestDeleteBuilderJoin(t *testing.T) {
+	sql, args, err := Delete("t1").
+		Join("t2 ON t1.id = t2.t1_id").
+		Where("t2.active = ?", false).
+		ToSQL()
+	assert.NoError(t, err)
+
+	expectedSQL := "DELETE t1 FROM t1 JOIN t2 ON t1.id = t2.t1_id WHERE t2.active = ?"
+	assert.Equal(t, expectedSQL, sql)
+	assert.Equal(t, []any{false}, args)
+}
+
+func TestDeleteBuilderLeftJoin(t *testing.T) {
+	sql, _, err := Delete("t1").
+		LeftJoin("t2 ON t1.id = t2.t1_id").
+		Where("t2.id IS NULL").
+		ToSQL()
+	assert.NoError(t, err)
+	assert.Equal(t, "DELETE t1 FROM t1 LEFT JOIN t2 ON t1.id = t2.t1_id WHERE t2.id IS NULL", sql)
+}
+
+func TestDeleteBuilderRightJoin(t *testing.T) {
+	sql, _, err := Delete("t1").
+		RightJoin("t2 ON t1.id = t2.t1_id").
+		ToSQL()
+	assert.NoError(t, err)
+	assert.Equal(t, "DELETE t1 FROM t1 RIGHT JOIN t2 ON t1.id = t2.t1_id", sql)
+}
+
+func TestDeleteBuilderInnerJoin(t *testing.T) {
+	sql, _, err := Delete("t1").
+		InnerJoin("t2 ON t1.id = t2.t1_id").
+		ToSQL()
+	assert.NoError(t, err)
+	assert.Equal(t, "DELETE t1 FROM t1 INNER JOIN t2 ON t1.id = t2.t1_id", sql)
+}
+
+func TestDeleteBuilderCrossJoin(t *testing.T) {
+	sql, _, err := Delete("t1").
+		CrossJoin("t2").
+		ToSQL()
+	assert.NoError(t, err)
+	assert.Equal(t, "DELETE t1 FROM t1 CROSS JOIN t2", sql)
+}
+
+func TestDeleteBuilderFullJoin(t *testing.T) {
+	sql, _, err := Delete("t1").
+		FullJoin("t2 ON t1.id = t2.t1_id").
+		ToSQL()
+	assert.NoError(t, err)
+	assert.Equal(t, "DELETE t1 FROM t1 FULL OUTER JOIN t2 ON t1.id = t2.t1_id", sql)
+}
+
+func TestDeleteBuilderJoinUsing(t *testing.T) {
+	sql, _, err := Delete("t1").
+		JoinUsing("t2", "id").
+		ToSQL()
+	assert.NoError(t, err)
+	assert.Equal(t, "DELETE t1 FROM t1 JOIN t2 USING (id)", sql)
+}
+
+func TestDeleteBuilderLeftJoinUsing(t *testing.T) {
+	sql, _, err := Delete("t1").
+		LeftJoinUsing("t2", "id", "region").
+		ToSQL()
+	assert.NoError(t, err)
+	assert.Equal(t, "DELETE t1 FROM t1 LEFT JOIN t2 USING (id, region)", sql)
+}
+
+func TestDeleteBuilderJoinWithPlaceholders(t *testing.T) {
+	sql, args, err := Delete("t1").
+		Join("t2 ON t1.id = t2.t1_id AND t2.status = ?", "inactive").
+		Where("t1.id = ?", 1).
+		ToSQL()
+	assert.NoError(t, err)
+
+	expectedSQL := "DELETE t1 FROM t1 JOIN t2 ON t1.id = t2.t1_id AND t2.status = ? WHERE t1.id = ?"
+	assert.Equal(t, expectedSQL, sql)
+	assert.Equal(t, []any{"inactive", 1}, args)
+}
+
+func TestDeleteBuilderJoinDollarPlaceholders(t *testing.T) {
+	sql, args, err := Delete("t1").
+		Join("t2 ON t1.id = t2.t1_id AND t2.status = ?", "inactive").
+		Where("t1.id = ?", 1).
+		PlaceholderFormat(Dollar).
+		ToSQL()
+	assert.NoError(t, err)
+
+	expectedSQL := "DELETE t1 FROM t1 JOIN t2 ON t1.id = t2.t1_id AND t2.status = $1 WHERE t1.id = $2"
+	assert.Equal(t, expectedSQL, sql)
+	assert.Equal(t, []any{"inactive", 1}, args)
+}
+
+func TestDeleteBuilderMultipleJoins(t *testing.T) {
+	sql, args, err := Delete("t1").
+		Join("t2 ON t1.id = t2.t1_id").
+		LeftJoin("t3 ON t2.id = t3.t2_id AND t3.active = ?", true).
+		Where("t1.id = ?", 1).
+		ToSQL()
+	assert.NoError(t, err)
+
+	expectedSQL := "DELETE t1 FROM t1 JOIN t2 ON t1.id = t2.t1_id LEFT JOIN t3 ON t2.id = t3.t2_id AND t3.active = ? WHERE t1.id = ?"
+	assert.Equal(t, expectedSQL, sql)
+	assert.Equal(t, []any{true, 1}, args)
+}
+
+func TestDeleteBuilderJoinClauseWithJoinExpr(t *testing.T) {
+	sql, args, err := Delete("t1").
+		JoinClause(
+			JoinExpr("t2").On("t1.id = t2.t1_id").On("t2.status = ?", "inactive"),
+		).
+		Where("t1.id = ?", 1).
+		ToSQL()
+	assert.NoError(t, err)
+
+	expectedSQL := "DELETE t1 FROM t1 JOIN t2 ON t1.id = t2.t1_id AND t2.status = ? WHERE t1.id = ?"
+	assert.Equal(t, expectedSQL, sql)
+	assert.Equal(t, []any{"inactive", 1}, args)
+}
+
+// ---------------------------------------------------------------------------
+// USING clause (PostgreSQL)
+// ---------------------------------------------------------------------------
+
+func TestDeleteBuilderUsing(t *testing.T) {
+	sql, args, err := Delete("t1").
+		Using("t2").
+		Where("t1.id = t2.t1_id AND t2.active = ?", false).
+		ToSQL()
+	assert.NoError(t, err)
+
+	expectedSQL := "DELETE FROM t1 USING t2 WHERE t1.id = t2.t1_id AND t2.active = ?"
+	assert.Equal(t, expectedSQL, sql)
+	assert.Equal(t, []any{false}, args)
+}
+
+func TestDeleteBuilderUsingMultipleTables(t *testing.T) {
+	sql, args, err := Delete("t1").
+		Using("t2", "t3").
+		Where("t1.id = t2.t1_id AND t2.t3_id = t3.id AND t3.active = ?", true).
+		ToSQL()
+	assert.NoError(t, err)
+
+	expectedSQL := "DELETE FROM t1 USING t2, t3 WHERE t1.id = t2.t1_id AND t2.t3_id = t3.id AND t3.active = ?"
+	assert.Equal(t, expectedSQL, sql)
+	assert.Equal(t, []any{true}, args)
+}
+
+func TestDeleteBuilderUsingDollarPlaceholders(t *testing.T) {
+	sql, args, err := Delete("t1").
+		Using("t2").
+		Where("t1.id = t2.t1_id AND t2.active = ?", false).
+		PlaceholderFormat(Dollar).
+		ToSQL()
+	assert.NoError(t, err)
+
+	expectedSQL := "DELETE FROM t1 USING t2 WHERE t1.id = t2.t1_id AND t2.active = $1"
+	assert.Equal(t, expectedSQL, sql)
+	assert.Equal(t, []any{false}, args)
+}
+
+func TestDeleteBuilderJoinWithReturning(t *testing.T) {
+	sql, args, err := Delete("t1").
+		Join("t2 ON t1.id = t2.t1_id").
+		Where("t2.active = ?", false).
+		Returning("t1.id").
+		ToSQL()
+	assert.NoError(t, err)
+
+	expectedSQL := "DELETE t1 FROM t1 JOIN t2 ON t1.id = t2.t1_id WHERE t2.active = ? RETURNING t1.id"
+	assert.Equal(t, expectedSQL, sql)
+	assert.Equal(t, []any{false}, args)
+}
+
+func TestDeleteBuilderUsingWithReturning(t *testing.T) {
+	sql, args, err := Delete("t1").
+		Using("t2").
+		Where("t1.id = t2.t1_id AND t2.active = ?", false).
+		Returning("t1.id").
+		PlaceholderFormat(Dollar).
+		ToSQL()
+	assert.NoError(t, err)
+
+	expectedSQL := "DELETE FROM t1 USING t2 WHERE t1.id = t2.t1_id AND t2.active = $1 RETURNING t1.id"
+	assert.Equal(t, expectedSQL, sql)
+	assert.Equal(t, []any{false}, args)
+}

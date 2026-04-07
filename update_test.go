@@ -397,3 +397,153 @@ func TestUpdateBuilderSetSubqueryInWhereDollarPlaceholders(t *testing.T) {
 	expectedArgs := []any{1, 2, true}
 	assert.Equal(t, expectedArgs, args)
 }
+
+// ---------------------------------------------------------------------------
+// JOIN clauses
+// ---------------------------------------------------------------------------
+
+func TestUpdateBuilderJoin(t *testing.T) {
+	sql, args, err := Update("t1").
+		Join("t2 ON t1.id = t2.t1_id").
+		Set("t1.name", "updated").
+		Where("t2.active = ?", true).
+		ToSQL()
+	assert.NoError(t, err)
+
+	expectedSQL := "UPDATE t1 JOIN t2 ON t1.id = t2.t1_id SET t1.name = ? WHERE t2.active = ?"
+	assert.Equal(t, expectedSQL, sql)
+	assert.Equal(t, []any{"updated", true}, args)
+}
+
+func TestUpdateBuilderLeftJoin(t *testing.T) {
+	sql, _, err := Update("t1").
+		LeftJoin("t2 ON t1.id = t2.t1_id").
+		Set("t1.name", "updated").
+		ToSQL()
+	assert.NoError(t, err)
+	assert.Equal(t, "UPDATE t1 LEFT JOIN t2 ON t1.id = t2.t1_id SET t1.name = ?", sql)
+}
+
+func TestUpdateBuilderRightJoin(t *testing.T) {
+	sql, _, err := Update("t1").
+		RightJoin("t2 ON t1.id = t2.t1_id").
+		Set("t1.name", "updated").
+		ToSQL()
+	assert.NoError(t, err)
+	assert.Equal(t, "UPDATE t1 RIGHT JOIN t2 ON t1.id = t2.t1_id SET t1.name = ?", sql)
+}
+
+func TestUpdateBuilderInnerJoin(t *testing.T) {
+	sql, _, err := Update("t1").
+		InnerJoin("t2 ON t1.id = t2.t1_id").
+		Set("t1.name", "updated").
+		ToSQL()
+	assert.NoError(t, err)
+	assert.Equal(t, "UPDATE t1 INNER JOIN t2 ON t1.id = t2.t1_id SET t1.name = ?", sql)
+}
+
+func TestUpdateBuilderCrossJoin(t *testing.T) {
+	sql, _, err := Update("t1").
+		CrossJoin("t2").
+		Set("t1.name", "updated").
+		ToSQL()
+	assert.NoError(t, err)
+	assert.Equal(t, "UPDATE t1 CROSS JOIN t2 SET t1.name = ?", sql)
+}
+
+func TestUpdateBuilderFullJoin(t *testing.T) {
+	sql, _, err := Update("t1").
+		FullJoin("t2 ON t1.id = t2.t1_id").
+		Set("t1.name", "updated").
+		ToSQL()
+	assert.NoError(t, err)
+	assert.Equal(t, "UPDATE t1 FULL OUTER JOIN t2 ON t1.id = t2.t1_id SET t1.name = ?", sql)
+}
+
+func TestUpdateBuilderJoinUsing(t *testing.T) {
+	sql, _, err := Update("t1").
+		JoinUsing("t2", "id").
+		Set("t1.name", "updated").
+		ToSQL()
+	assert.NoError(t, err)
+	assert.Equal(t, "UPDATE t1 JOIN t2 USING (id) SET t1.name = ?", sql)
+}
+
+func TestUpdateBuilderLeftJoinUsing(t *testing.T) {
+	sql, _, err := Update("t1").
+		LeftJoinUsing("t2", "id", "region").
+		Set("t1.name", "updated").
+		ToSQL()
+	assert.NoError(t, err)
+	assert.Equal(t, "UPDATE t1 LEFT JOIN t2 USING (id, region) SET t1.name = ?", sql)
+}
+
+func TestUpdateBuilderJoinWithPlaceholders(t *testing.T) {
+	sql, args, err := Update("t1").
+		Join("t2 ON t1.id = t2.t1_id AND t2.status = ?", "active").
+		Set("t1.name", "updated").
+		Where("t1.id = ?", 1).
+		ToSQL()
+	assert.NoError(t, err)
+
+	expectedSQL := "UPDATE t1 JOIN t2 ON t1.id = t2.t1_id AND t2.status = ? SET t1.name = ? WHERE t1.id = ?"
+	assert.Equal(t, expectedSQL, sql)
+	assert.Equal(t, []any{"active", "updated", 1}, args)
+}
+
+func TestUpdateBuilderJoinDollarPlaceholders(t *testing.T) {
+	sql, args, err := Update("t1").
+		Join("t2 ON t1.id = t2.t1_id AND t2.status = ?", "active").
+		Set("t1.name", "updated").
+		Where("t1.id = ?", 1).
+		PlaceholderFormat(Dollar).
+		ToSQL()
+	assert.NoError(t, err)
+
+	expectedSQL := "UPDATE t1 JOIN t2 ON t1.id = t2.t1_id AND t2.status = $1 SET t1.name = $2 WHERE t1.id = $3"
+	assert.Equal(t, expectedSQL, sql)
+	assert.Equal(t, []any{"active", "updated", 1}, args)
+}
+
+func TestUpdateBuilderMultipleJoins(t *testing.T) {
+	sql, args, err := Update("t1").
+		Join("t2 ON t1.id = t2.t1_id").
+		LeftJoin("t3 ON t2.id = t3.t2_id AND t3.active = ?", true).
+		Set("t1.name", "updated").
+		Where("t1.id = ?", 1).
+		ToSQL()
+	assert.NoError(t, err)
+
+	expectedSQL := "UPDATE t1 JOIN t2 ON t1.id = t2.t1_id LEFT JOIN t3 ON t2.id = t3.t2_id AND t3.active = ? SET t1.name = ? WHERE t1.id = ?"
+	assert.Equal(t, expectedSQL, sql)
+	assert.Equal(t, []any{true, "updated", 1}, args)
+}
+
+func TestUpdateBuilderJoinClauseWithJoinExpr(t *testing.T) {
+	sql, args, err := Update("t1").
+		JoinClause(
+			JoinExpr("t2").On("t1.id = t2.t1_id").On("t2.status = ?", "active"),
+		).
+		Set("t1.name", "updated").
+		Where("t1.id = ?", 1).
+		ToSQL()
+	assert.NoError(t, err)
+
+	expectedSQL := "UPDATE t1 JOIN t2 ON t1.id = t2.t1_id AND t2.status = ? SET t1.name = ? WHERE t1.id = ?"
+	assert.Equal(t, expectedSQL, sql)
+	assert.Equal(t, []any{"active", "updated", 1}, args)
+}
+
+func TestUpdateBuilderJoinWithFrom(t *testing.T) {
+	// JOIN and FROM can coexist — JOIN comes before SET, FROM comes after SET.
+	sql, _, err := Update("t1").
+		Join("t2 ON t1.id = t2.t1_id").
+		Set("t1.name", "updated").
+		From("t3").
+		Where("t3.id = t2.t3_id").
+		ToSQL()
+	assert.NoError(t, err)
+
+	expectedSQL := "UPDATE t1 JOIN t2 ON t1.id = t2.t1_id SET t1.name = ? FROM t3 WHERE t3.id = t2.t3_id"
+	assert.Equal(t, expectedSQL, sql)
+}

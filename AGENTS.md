@@ -156,12 +156,17 @@ The `Placeholders(count int) string` function generates a comma-separated list o
 **UpdateBuilder** notable methods:
 - `Table()`, `Set()`, `SetMap()`
 - `From()`, `FromSelect()` — PostgreSQL-style `UPDATE ... FROM`
+- `Join()`, `LeftJoin()`, `RightJoin()`, `InnerJoin()`, `CrossJoin()`, `FullJoin()`, `JoinClause()` — MySQL-style `UPDATE ... JOIN` (emitted between table and SET)
+- `JoinUsing()`, `LeftJoinUsing()`, `RightJoinUsing()`, `InnerJoinUsing()`, `CrossJoinUsing()`, `FullJoinUsing()` — convenience for `JOIN table USING (col1, col2)`
 - `Where()`, `OrderBy()`, `Limit()`, `Offset()` — LIMIT/OFFSET are parameterized
 - `Returning()` — add `RETURNING` clause (PostgreSQL, SQLite 3.35+)
 - `SafeTable()`, `SafeSet()` — safe alternatives accepting `Ident` values for dynamic identifiers from user input
 
 **DeleteBuilder** notable methods:
 - `From()`, `Where()`, `OrderBy()`, `Limit()`, `Offset()` — LIMIT/OFFSET are parameterized
+- `Using()` — PostgreSQL-style `DELETE ... USING` for multi-table deletes
+- `Join()`, `LeftJoin()`, `RightJoin()`, `InnerJoin()`, `CrossJoin()`, `FullJoin()`, `JoinClause()` — MySQL-style `DELETE ... JOIN`
+- `JoinUsing()`, `LeftJoinUsing()`, `RightJoinUsing()`, `InnerJoinUsing()`, `CrossJoinUsing()`, `FullJoinUsing()` — convenience for `JOIN table USING (col1, col2)`
 - `Returning()` — add `RETURNING` clause (PostgreSQL, SQLite 3.35+)
 - `Query()` — useful with `RETURNING` clauses
 - `SafeFrom()` — safe alternative accepting `Ident` value for dynamic table name from user input

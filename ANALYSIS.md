@@ -131,16 +131,36 @@ Expr("EXISTS (?)", subQuery)
 
 2. **Structured `JoinExpr` builder:** A new `JoinExpr(table)` constructor in `join.go` that returns a `JoinBuilder` interface (implemented by unexported `joinExprBuilder`). Chainable methods: `.Type()` (set join type via `JoinType` constants), `.As()` (alias), `.On()` (raw ON conditions with placeholders), `.OnExpr()` (Sqlizer-based ON conditions — reuse `Eq`, `Gt`, `Between`, etc.), `.Using()` (USING columns), `.SubQuery()` (join against a subquery). Pass the result to `SelectBuilder.JoinClause()`. This eliminates raw string concatenation for all join patterns.
 
-**Files modified:** `select.go`, `select_test.go`, `join.go`, `join_test.go`, `example_test.go`, `integration/join_test.go`. Full unit test coverage including single-column USING, multi-column USING, all six join types, mixed ON/USING joins, `JoinExpr` with all features (ON, OnExpr, USING, alias, subquery, all join types, Dollar placeholders, composition with expression helpers). Runnable `Example*` functions for godoc. Integration tests against SQLite (and PostgreSQL/MySQL when available).
+**Files modified:** `select.go`, `select_test.go`, `join.go`, `join_test.go`, `example_test.go`, `integration/join_test.go`. Unit tests cover `FullJoin` with and without args, `FullJoinUsing` with single and multiple columns, `JoinExpr` with `JoinFull` type. Runnable `Example*` functions for godoc. Integration tests (skipped on MySQL) cover FULL OUTER JOIN preserving both sides, WHERE filtering, placeholder args in ON clause, FULL OUTER JOIN USING with unmatched rows, and Dollar placeholder correctness.
 
 ### 1.10 ✅ `FULL OUTER JOIN` — **DONE**
 ~~Only `JOIN`, `LEFT JOIN`, `RIGHT JOIN`, `INNER JOIN`, and `CROSS JOIN` are provided. `FULL OUTER JOIN` is missing — it's standard SQL supported by all major databases except MySQL (which supports it from 8.0.31+ via workarounds).~~
 
-**Implemented** (April 2026) via a new `FullJoin(join string, rest ...any)` method on `SelectBuilder`. Follows the same pattern as existing join methods — delegates to `JoinClause("FULL OUTER JOIN " + join, rest...)`. Also includes `FullJoinUsing()` as part of the JOIN ... USING convenience feature (§1.9) and `JoinType` constant `JoinFull` for use with the `JoinExpr` structured builder.
+**Implemented** (April 2026) via a new `FullJoin(join string, rest ...any)` method on `SelectBuilder`. Follows the same pattern as existing join methods — delegates to `JoinClause("FULL OUTER JOIN " + join, rest...)`. Also includes `FullJoinUsing` as part of the JOIN ... USING convenience feature (§1.9) and `JoinType` constant `JoinFull` for use with the `JoinExpr` structured builder.
 
 **Files modified:** `select.go`, `select_test.go`, `join.go`, `join_test.go`, `example_test.go`, `integration/join_test.go`. Unit tests cover `FullJoin` with and without args, `FullJoinUsing` with single and multiple columns, `JoinExpr` with `JoinFull` type. Runnable `Example*` functions for godoc. Integration tests (skipped on MySQL) cover FULL OUTER JOIN preserving both sides, WHERE filtering, placeholder args in ON clause, FULL OUTER JOIN USING with unmatched rows, and Dollar placeholder correctness.
 
-### 1.11 ✅ Parameterized `LIMIT` / `OFFSET` — **DONE**
+### 1.11 ✅ JOIN Support in DELETE / UPDATE Builders — **DONE**
+~~MySQL `DELETE...JOIN` and `UPDATE...JOIN` are common patterns. There was no `Join()` method on `DeleteBuilder` or `UpdateBuilder`. Users had to fall back to raw `Suffix`/`Prefix` hacks or string concatenation for multi-table deletes/updates.~~
+
+**Implemented** (April 2026) by adding `Joins []Sqlizer` fields to both `deleteData` and `updateData`, along with a `UsingParts []Sqlizer` field on `deleteData` for PostgreSQL `DELETE ... USING` syntax.
+
+**UpdateBuilder** — the join clause is emitted between the table name and `SET`:
+- `UPDATE t1 JOIN t2 ON t1.id = t2.t1_id SET t1.name = ? WHERE ...`
+- Methods: `JoinClause()`, `Join()`, `LeftJoin()`, `RightJoin()`, `InnerJoin()`, `CrossJoin()`, `FullJoin()`, `JoinUsing()`, `LeftJoinUsing()`, `RightJoinUsing()`, `InnerJoinUsing()`, `CrossJoinUsing()`, `FullJoinUsing()`
+- Compatible with structured `JoinExpr` builder via `JoinClause()`
+- Coexists with PostgreSQL-style `From()` / `FromSelect()` — JOIN comes before SET, FROM comes after
+
+**DeleteBuilder** — two complementary approaches for different SQL dialects:
+- **MySQL-style JOINs:** `DELETE t1 FROM t1 JOIN t2 ON ... WHERE ...` — same methods as UpdateBuilder. The table name is automatically duplicated in the MySQL multi-table DELETE syntax.
+- **PostgreSQL-style USING:** `DELETE FROM t1 USING t2 WHERE t1.id = t2.t1_id AND ...` — new `Using(tables ...string)` method. Multiple tables produce comma-separated list: `USING t2, t3`
+- Both approaches emit their clauses after `FROM table` and before `WHERE`
+
+**Placeholder handling:** All join args participate in placeholder numbering. Works correctly with `Question`, `Dollar`, `Colon`, and `AtP` formats. Placeholder numbering flows sequentially: join args → SET args → FROM args → WHERE args.
+
+**Files modified:** `update.go`, `delete.go`, `update_test.go`, `delete_test.go`, `example_test.go`, `integration/update_test.go`, `integration/delete_test.go`. Unit tests cover: all join types (Join, LeftJoin, RightJoin, InnerJoin, CrossJoin, FullJoin), JoinUsing variants, placeholder args in ON clauses, Dollar placeholder numbering, multiple joins, JoinExpr with JoinClause, JOIN+FROM coexistence (UpdateBuilder), USING single/multiple tables, USING+Dollar, JOIN+RETURNING, USING+RETURNING. Example tests for godoc. Integration tests: SQL generation for Dollar/JoinExpr/JoinUsing on both builders; execution tests for MySQL (skipped on SQLite/PostgreSQL); USING tests for PostgreSQL (skipped on others).
+
+### 1.12 ✅ Parameterized `LIMIT` / `OFFSET` — **DONE**
 ~~`Limit` and `Offset` format the values as literal strings (`fmt.Sprintf("%d", limit)`) directly into SQL rather than using placeholders. This means the query string changes with different limit/offset values, defeating prepared-statement caching. Parameterized limits would allow statement reuse.~~
 
 **Implemented** (April 2026) by changing the `Limit` and `Offset` fields in all builder data structs (`selectData`, `updateData`, `deleteData`, `unionData`) from `string` to `*uint64`. The `toSQLRaw()` methods now emit `LIMIT ?` / `OFFSET ?` with the value as a bound argument, instead of formatting the value directly into the SQL string.
@@ -388,7 +408,7 @@ The fix replaces `vs.ToSQL()` with `nestedToSQL(vs)` in the SET clause handling,
 
 **Files modified:** `expr.go`, `expr_test.go`, `integration/expr_test.go`. Full unit test coverage including `Alias` with Dollar subquery (single and multiple), `Expr` with Dollar subquery (single and multiple args), `ConcatExpr` with Dollar subquery, `Alias(ConcatExpr(...))` nesting, `Prefix`/`Suffix` with Expr-wrapped subqueries, complex multi-position queries with subqueries in columns/WHERE/prefix/suffix, `rawSqlizer` interface verification for all three types, and Colon/AtP format correctness. Integration tests (SQLite) cover: aliased subquery execution, Dollar placeholder SQL generation for all patterns, multi-column aliased subqueries, `Expr` subquery in WHERE, `ConcatExpr` subquery execution, prefix/suffix subqueries, complex multi-position Dollar queries, and Colon/AtP placeholder verification.
 
-### 3.6 ✅ HIGH — `CaseBuilder` Rejects Non-String Values (`int`) in `When`/`Then` — **DONE**
+### 3.6 ✅ FIXED — `CaseBuilder` Rejects Non-String Values (`int`) in `When`/`Then` — **DONE**
 
 > **GitHub [#388](https://github.com/Masterminds/squirrel/issues/388)** — "expected string or Sqlizer, not int" when using CASE WHEN (opened 2025-03-10).
 
@@ -475,7 +495,7 @@ if needC {
 | **[#271](https://github.com/Masterminds/squirrel/issues/271)** | ✅ CTE / WITH clause | Standard SQL:1999, 8 comments. See §1.4. **Done.** |
 | **[#355](https://github.com/Masterminds/squirrel/issues/355)** | ✅ Parameterized LIMIT/OFFSET | Defeats prepared-stmt caching. See §1.11. **Done.** |
 | **[#299](https://github.com/Masterminds/squirrel/issues/299)** / **[#258](https://github.com/Masterminds/squirrel/issues/258)** | Subquery in WHERE IN | 12 comments combined. See §1.5. |
-| **[#257](https://github.com/Masterminds/squirrel/issues/257)** | JOIN support in DELETE/UPDATE | MySQL DELETE...JOIN and UPDATE...JOIN are common patterns. Currently no `Join()` method on `DeleteBuilder`. |
+| **[#257](https://github.com/Masterminds/squirrel/issues/257)** | ✅ JOIN support in DELETE/UPDATE | MySQL DELETE...JOIN and UPDATE...JOIN are common patterns. **Done.** |
 | **[#243](https://github.com/Masterminds/squirrel/issues/243)** | Common `Where` interface across builders | 6 comments. `SelectBuilder`, `UpdateBuilder`, `DeleteBuilder` all have `.Where()` but share no interface, preventing generic filter-application functions. |
 | **[#369](https://github.com/Masterminds/squirrel/issues/369)** | `GetOrderBy` / `RemoveOrderBy` | Needed for wrapping queries in count CTEs. Similar to existing `RemoveLimit`/`RemoveOffset`/`RemoveColumns`. |
 | **[#241](https://github.com/Masterminds/squirrel/issues/241)** | `JoinSelect` — join against a subquery | Like `FromSelect` but for JOINs. Current workaround (`JoinClause(subquery.Prefix("JOIN (").Suffix(")..."))`) is fragile and causes placeholder issues. |
@@ -545,7 +565,7 @@ if needC {
 | ✅ Done | CTE (`WITH` / `WITH RECURSIVE`) builder | [#271](https://github.com/Masterminds/squirrel/issues/271) |
 | ✅ Done | Parameterized `LIMIT` / `OFFSET` | [#355](https://github.com/Masterminds/squirrel/issues/355) |
 | ✅ Done | Subquery in WHERE IN / expression position | [#299](https://github.com/Masterminds/squirrel/issues/299), [#258](https://github.com/Masterminds/squirrel/issues/258) |
-| ⭐ High | JOIN in DELETE / UPDATE builders | [#257](https://github.com/Masterminds/squirrel/issues/257) |
+| ✅ Done | JOIN in DELETE / UPDATE builders | [#257](https://github.com/Masterminds/squirrel/issues/257) |
 | ⭐ High | Common `Where` interface across builders | [#243](https://github.com/Masterminds/squirrel/issues/243) |
 | ⭐ High | `RemoveOrderBy` / `GetOrderBy` | [#369](https://github.com/Masterminds/squirrel/issues/369) |
 | ⭐ High | `JoinSelect` — join against a subquery | [#241](https://github.com/Masterminds/squirrel/issues/241) |
@@ -570,7 +590,10 @@ if needC {
 | ⭐ Low | SQL Server paging | [#356](https://github.com/Masterminds/squirrel/issues/356) |
 | ⭐ Low | Oracle named params | [#309](https://github.com/Masterminds/squirrel/issues/309) |
 | ⭐ Low | Schema validator | [#390](https://github.com/Masterminds/squirrel/issues/390) |
+| ⭐ Low | `INSERT ... SELECT FROM (VALUES ...)` | Niche PostgreSQL pattern. Complex to model generically. |
 
 ### Maintenance Note
 
 > **GitHub [#227](https://github.com/Masterminds/squirrel/issues/227)** — "Maintainer?" (opened 2020-01-27). The library is in maintenance mode with minimal activity. PRs merge slowly if at all. Any investment in these issues should weigh the likelihood of upstream acceptance.
+
+---

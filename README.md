@@ -20,9 +20,9 @@ sql == "SELECT * FROM users JOIN emails USING (email_id) WHERE deleted_at IS NUL
 
 ```go
 sql, args, err := sq.
-    Insert("users").Columns("name", "age").
-    Values("moe", 13).Values("larry", sq.Expr("? + 5", 12)).
-    ToSql()
+Insert("users").Columns("name", "age").
+Values("moe", 13).Values("larry", sq.Expr("? + 5", 12)).
+ToSql()
 
 sql == "INSERT INTO users (name,age) VALUES (?,?),(?,? + 5)"
 ```
@@ -36,14 +36,14 @@ rows, err := three_stooges.RunWith(db).Query()
 
 // Behaves like:
 rows, err := db.Query("SELECT * FROM users WHERE username IN (?,?,?,?) LIMIT ?",
-                      "moe", "larry", "curly", "shemp", 3)
+"moe", "larry", "curly", "shemp", 3)
 ```
 
 Squirrel makes conditional query building a breeze:
 
 ```go
 if len(q) > 0 {
-    users = users.Where("name LIKE ?", fmt.Sprint("%", q, "%"))
+users = users.Where("name LIKE ?", fmt.Sprint("%", q, "%"))
 }
 ```
 
@@ -72,11 +72,11 @@ sql == "SELECT * FROM elephants WHERE name IN ($1,$2)"
 
 /// You can retrieve id ...
 query := sq.Insert("nodes").
-    Columns("uuid", "type", "data").
-    Values(node.Uuid, node.Type, node.Data).
-    Suffix("RETURNING \"id\"").
-    RunWith(m.db).
-    PlaceholderFormat(sq.Dollar)
+Columns("uuid", "type", "data").
+Values(node.Uuid, node.Type, node.Data).
+Suffix("RETURNING \"id\"").
+RunWith(m.db).
+PlaceholderFormat(sq.Dollar)
 
 query.QueryRow().Scan(&node.id)
 ```
@@ -97,7 +97,7 @@ SELECT * FROM nodes WHERE meta->'format' ?| array[$1,$2]
 
 * **How can I build an IN query on composite keys / tuples, e.g. `WHERE (col1, col2) IN ((1,2),(3,4))`? ([#104](https://github.com/Masterminds/squirrel/issues/104))**
 
-    Squirrel does not explicitly support tuples, but you can get the same effect with e.g.:
+  Squirrel does not explicitly support tuples, but you can get the same effect with e.g.:
 
     ```go
     sq.Or{
@@ -108,20 +108,20 @@ SELECT * FROM nodes WHERE meta->'format' ?| array[$1,$2]
     ```sql
     (col1 = ? AND col2 = ? OR col1 = ? AND col2 = ?)
     ```
-    with args `[1 2 3 4]`
+  with args `[1 2 3 4]`
 
-    (which should produce the same query plan as the tuple version, since AND has
-    higher precedence than OR in SQL)
+  (which should produce the same query plan as the tuple version, since AND has
+  higher precedence than OR in SQL)
 
 * **Why doesn't `Eq{"mynumber": []uint8{1,2,3}}` turn into an `IN` query? ([#114](https://github.com/Masterminds/squirrel/issues/114))**
 
-    Values of type `[]byte` are handled specially by `database/sql`. In Go, [`byte` is just an alias of `uint8`](https://golang.org/pkg/builtin/#byte), so there is no way to distinguish `[]uint8` from `[]byte`.
+  Values of type `[]byte` are handled specially by `database/sql`. In Go, [`byte` is just an alias of `uint8`](https://golang.org/pkg/builtin/#byte), so there is no way to distinguish `[]uint8` from `[]byte`.
 
 * **Some features are poorly documented!**
 
-    Hopefully not anymore! See the [Feature Reference](#feature-reference) below.
-    The tests can also be considered a part of the documentation; take a look at
-    those for ideas on how to express more complex queries.
+  Hopefully not anymore! See the [Feature Reference](#feature-reference) below.
+  The tests can also be considered a part of the documentation; take a look at
+  those for ideas on how to express more complex queries.
 
 ## Feature Reference
 
@@ -133,7 +133,7 @@ expressions and MySQL's `REPLACE`:
 ```go
 // UPDATE
 sql, args, err := sq.Update("users").Set("name", "moe").Set("age", 13).
-    Where(sq.Eq{"id": 1}).ToSql()
+Where(sq.Eq{"id": 1}).ToSql()
 // UPDATE users SET name = ?, age = ? WHERE id = ?
 
 // DELETE
@@ -142,14 +142,14 @@ sql, args, err := sq.Delete("users").Where(sq.Eq{"id": 1}).ToSql()
 
 // CASE expression (usable inside SELECT columns, etc.)
 sql, args, err := sq.Case("status").
-    When("1", "'active'").
-    When("2", "'inactive'").
-    Else("'unknown'").ToSql()
+When("1", "'active'").
+When("2", "'inactive'").
+Else("'unknown'").ToSql()
 // CASE status WHEN 1 THEN 'active' WHEN 2 THEN 'inactive' ELSE 'unknown' END
 
 // REPLACE (MySQL-specific; same interface as Insert)
 sql, args, err := sq.Replace("users").Columns("name", "age").
-    Values("moe", 13).ToSql()
+Values("moe", 13).ToSql()
 // REPLACE INTO users (name,age) VALUES (?,?)
 ```
 
@@ -243,16 +243,16 @@ sq.Placeholders(3) // "?,?,?"
 
 ```go
 sq.Select("department", "COUNT(*) as cnt").
-    Distinct().                          // SELECT DISTINCT ...
-    From("users").
-    Join("emails USING (email_id)").     // also LeftJoin, RightJoin, InnerJoin, CrossJoin, FullJoin
-    Where(sq.Gt{"age": 18}).
-    GroupBy("department").
-    Having("COUNT(*) > ?", 5).
-    OrderBy("cnt DESC").
-    Limit(10).
-    Offset(20).
-    ToSql()
+Distinct().                          // SELECT DISTINCT ...
+From("users").
+Join("emails USING (email_id)").     // also LeftJoin, RightJoin, InnerJoin, CrossJoin, FullJoin
+Where(sq.Gt{"age": 18}).
+GroupBy("department").
+Having("COUNT(*) > ?", 5).
+OrderBy("cnt DESC").
+Limit(10).
+Offset(20).
+ToSql()
 // SELECT DISTINCT department, COUNT(*) as cnt FROM users
 //   JOIN emails USING (email_id) WHERE age > ?
 //   GROUP BY department HAVING COUNT(*) > ?
@@ -301,10 +301,10 @@ raw SQL strings. Pass the result to `JoinClause`:
 ```go
 // Basic ON condition — no raw string concatenation needed
 sq.Select("items.name", "users.username").
-    From("items").
-    JoinClause(
-        sq.JoinExpr("users").On("items.fk_user_key = users.key"),
-    )
+From("items").
+JoinClause(
+sq.JoinExpr("users").On("items.fk_user_key = users.key"),
+)
 // SELECT items.name, users.username FROM items JOIN users ON items.fk_user_key = users.key
 ```
 
@@ -312,12 +312,12 @@ Chain multiple `.On()` calls — they are ANDed together:
 
 ```go
 sq.Select("items.name", "users.username").
-    From("items").
-    JoinClause(
-        sq.JoinExpr("users").
-            On("items.fk_user_key = users.key").
-            On("users.username = ?", "alice"),
-    )
+From("items").
+JoinClause(
+sq.JoinExpr("users").
+On("items.fk_user_key = users.key").
+On("users.username = ?", "alice"),
+)
 // ... JOIN users ON items.fk_user_key = users.key AND users.username = ?
 ```
 
@@ -325,9 +325,9 @@ Use `.OnExpr()` to compose with expression helpers like `Eq`, `Gt`, `Between`:
 
 ```go
 sq.Select("*").From("items").JoinClause(
-    sq.JoinExpr("prices").
-        On("items.id = prices.item_id").
-        OnExpr(sq.Gt{"prices.amount": 100}),
+sq.JoinExpr("prices").
+On("items.id = prices.item_id").
+OnExpr(sq.Gt{"prices.amount": 100}),
 )
 // ... JOIN prices ON items.id = prices.item_id AND prices.amount > ?
 ```
@@ -336,11 +336,11 @@ Set the join type with `.Type()`, add an alias with `.As()`:
 
 ```go
 sq.Select("i.name", "u.username").
-    From("items i").
-    JoinClause(
-        sq.JoinExpr("users").Type(sq.JoinLeft).As("u").
-            On("i.fk_user_key = u.key"),
-    )
+From("items i").
+JoinClause(
+sq.JoinExpr("users").Type(sq.JoinLeft).As("u").
+On("i.fk_user_key = u.key"),
+)
 // SELECT i.name, u.username FROM items i LEFT JOIN users u ON i.fk_user_key = u.key
 ```
 
@@ -352,11 +352,11 @@ Use `.SubQuery()` to join against a subquery:
 ```go
 sub := sq.Select("id", "name").From("users").Where(sq.Eq{"active": true})
 sq.Select("items.name", "u.name").
-    From("items").
-    JoinClause(
-        sq.JoinExpr("").SubQuery(sub).As("u").
-            On("items.fk_user_key = u.id"),
-    )
+From("items").
+JoinClause(
+sq.JoinExpr("").SubQuery(sub).As("u").
+On("items.fk_user_key = u.id"),
+)
 // ... JOIN (SELECT id, name FROM users WHERE active = ?) u ON items.fk_user_key = u.id
 ```
 
@@ -364,7 +364,7 @@ Use `.Using()` for USING clauses:
 
 ```go
 sq.Select("*").From("orders").JoinClause(
-    sq.JoinExpr("customers").Using("customer_id"),
+sq.JoinExpr("customers").Using("customer_id"),
 )
 // SELECT * FROM orders JOIN customers USING (customer_id)
 ```
@@ -380,7 +380,7 @@ base := sq.Select("*").From("users").Limit(10).Offset(20)
 // Remove limit and offset for a count query.
 // RemoveLimit/RemoveOffset remove the parameterized LIMIT/OFFSET clauses entirely.
 countQuery := base.RemoveColumns().RemoveLimit().RemoveOffset().
-    Column("COUNT(*)")
+Column("COUNT(*)")
 ```
 
 ### Subqueries
@@ -398,7 +398,7 @@ Use a `SelectBuilder` as a value in `Eq` / `NotEq` for `WHERE ... IN (SELECT ...
 ```go
 sub := sq.Select("id").From("departments").Where(sq.Eq{"name": "Engineering"})
 sql, args, err := sq.Select("*").From("employees").
-    Where(sq.Eq{"department_id": sub}).ToSql()
+Where(sq.Eq{"department_id": sub}).ToSql()
 // SELECT * FROM employees WHERE department_id IN (SELECT id FROM departments WHERE name = ?)
 ```
 
@@ -457,7 +457,7 @@ Build `WITH` / `WITH RECURSIVE` clauses using `CteBuilder`:
 ```go
 activeSub := sq.Select("id", "name").From("users").Where(sq.Eq{"active": true})
 sql, args, err := sq.With("active_users", activeSub).
-    Statement(sq.Select("*").From("active_users")).ToSql()
+Statement(sq.Select("*").From("active_users")).ToSql()
 // WITH active_users AS (SELECT id, name FROM users WHERE active = ?)
 //   SELECT * FROM active_users
 ```
@@ -467,10 +467,10 @@ Recursive CTEs:
 ```go
 base := sq.Select("id", "parent_id").From("categories").Where(sq.Eq{"parent_id": nil})
 recursive := sq.Select("c.id", "c.parent_id").From("categories c").
-    Join("tree t ON c.parent_id = t.id")
+Join("tree t ON c.parent_id = t.id")
 
 sql, args, err := sq.WithRecursive("tree", sq.Union(base, recursive)).
-    Statement(sq.Select("*").From("tree")).ToSql()
+Statement(sq.Select("*").From("tree")).ToSql()
 // WITH RECURSIVE tree AS (
 //   SELECT id, parent_id FROM categories WHERE parent_id IS NULL
 //   UNION SELECT c.id, c.parent_id FROM categories c JOIN tree t ON c.parent_id = t.id
@@ -481,7 +481,7 @@ CTEs with explicit column lists:
 
 ```go
 sq.WithColumns("cte", []string{"x", "y"}, sq.Select("a", "b").From("t1")).
-    Statement(sq.Select("x", "y").From("cte"))
+Statement(sq.Select("x", "y").From("cte"))
 // WITH cte (x, y) AS (SELECT a, b FROM t1) SELECT x, y FROM cte
 ```
 
@@ -494,40 +494,40 @@ The main `.Statement()` accepts any `Sqlizer` — SELECT, INSERT, UPDATE, DELETE
 ```go
 // DO NOTHING
 sq.Insert("users").Columns("id", "name").Values(1, "John").
-    OnConflictColumns("id").OnConflictDoNothing().ToSql()
+OnConflictColumns("id").OnConflictDoNothing().ToSql()
 // INSERT INTO users (id,name) VALUES (?,?) ON CONFLICT (id) DO NOTHING
 
 // DO UPDATE SET
 sq.Insert("users").Columns("id", "name").Values(1, "John").
-    OnConflictColumns("id").
-    OnConflictDoUpdate("name", sq.Expr("EXCLUDED.name")).ToSql()
+OnConflictColumns("id").
+OnConflictDoUpdate("name", sq.Expr("EXCLUDED.name")).ToSql()
 // INSERT INTO users (id,name) VALUES (?,?)
 //   ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name
 
 // DO UPDATE with WHERE clause
 sq.Insert("users").Columns("id", "name").Values(1, "John").
-    OnConflictColumns("id").
-    OnConflictDoUpdate("name", sq.Expr("EXCLUDED.name")).
-    OnConflictWhere(sq.Eq{"users.active": true}).ToSql()
+OnConflictColumns("id").
+OnConflictDoUpdate("name", sq.Expr("EXCLUDED.name")).
+OnConflictWhere(sq.Eq{"users.active": true}).ToSql()
 
 // Named constraint
 sq.Insert("users").Columns("id", "name").Values(1, "John").
-    OnConflictOnConstraint("users_pkey").OnConflictDoNothing().ToSql()
+OnConflictOnConstraint("users_pkey").OnConflictDoNothing().ToSql()
 
 // Map convenience
 sq.Insert("users").Columns("id", "name", "email").Values(1, "John", "j@x.com").
-    OnConflictColumns("id").
-    OnConflictDoUpdateMap(map[string]interface{}{
-        "name":  sq.Expr("EXCLUDED.name"),
-        "email": sq.Expr("EXCLUDED.email"),
-    }).ToSql()
+OnConflictColumns("id").
+OnConflictDoUpdateMap(map[string]interface{}{
+"name":  sq.Expr("EXCLUDED.name"),
+"email": sq.Expr("EXCLUDED.email"),
+}).ToSql()
 ```
 
 **MySQL** — use `OnDuplicateKeyUpdate`:
 
 ```go
 sq.Insert("users").Columns("id", "name").Values(1, "John").
-    OnDuplicateKeyUpdate("name", sq.Expr("VALUES(name)")).ToSql()
+OnDuplicateKeyUpdate("name", sq.Expr("VALUES(name)")).ToSql()
 // INSERT INTO users (id,name) VALUES (?,?) ON DUPLICATE KEY UPDATE name = VALUES(name)
 ```
 
@@ -541,7 +541,7 @@ sq.Insert("users").Columns("name").Values("moe").Returning("id").ToSql()
 // INSERT INTO users (name) VALUES (?) RETURNING id
 
 sq.Update("users").Set("name", "moe").Where(sq.Eq{"id": 1}).
-    Returning("id", "name").ToSql()
+Returning("id", "name").ToSql()
 // UPDATE users SET name = ? WHERE id = ? RETURNING id, name
 
 sq.Delete("users").Where(sq.Eq{"id": 1}).Returning("*").ToSql()
@@ -553,9 +553,9 @@ after the conflict action:
 
 ```go
 sq.Insert("users").Columns("id", "name").Values(1, "John").
-    OnConflictColumns("id").
-    OnConflictDoUpdate("name", sq.Expr("EXCLUDED.name")).
-    Returning("id", "name").ToSql()
+OnConflictColumns("id").
+OnConflictDoUpdate("name", sq.Expr("EXCLUDED.name")).
+Returning("id", "name").ToSql()
 // INSERT INTO users (id,name) VALUES (?,?)
 //   ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name
 //   RETURNING id, name
@@ -578,15 +578,15 @@ Set columns and values from a map (available on both `InsertBuilder` and `Update
 ```go
 // Insert
 sq.Insert("users").SetMap(map[string]interface{}{
-    "name": "moe",
-    "age":  13,
+"name": "moe",
+"age":  13,
 }).ToSql()
 // INSERT INTO users (age,name) VALUES (?,?)   -- columns sorted alphabetically
 
 // Update
 sq.Update("users").SetMap(map[string]interface{}{
-    "name": "moe",
-    "age":  13,
+"name": "moe",
+"age":  13,
 }).Where(sq.Eq{"id": 1}).ToSql()
 // UPDATE users SET age = ?, name = ? WHERE id = ?
 ```
@@ -606,11 +606,99 @@ Use `From` or `FromSelect` on an `UpdateBuilder` for PostgreSQL-style joins:
 
 ```go
 sq.Update("users").Set("name", "moe").
-    From("accounts").
-    Where("users.account_id = accounts.id").
-    ToSql()
+From("accounts").
+Where("users.account_id = accounts.id").
+ToSql()
 // UPDATE users SET name = ? FROM accounts WHERE users.account_id = accounts.id
 ```
+
+### UPDATE ... JOIN (MySQL)
+
+Use `Join`, `LeftJoin`, `InnerJoin`, etc. on an `UpdateBuilder` for MySQL-style joins.
+The join clause is emitted between the table name and `SET`:
+
+```go
+sq.Update("orders").
+    Join("customers ON orders.customer_id = customers.id").
+    Set("orders.status", "verified").
+    Where("customers.verified = ?", true).
+    ToSql()
+// UPDATE orders JOIN customers ON orders.customer_id = customers.id
+//   SET orders.status = ? WHERE customers.verified = ?
+
+// Multiple joins
+sq.Update("t1").
+    Join("t2 ON t1.id = t2.t1_id").
+    LeftJoin("t3 ON t2.id = t3.t2_id AND t3.active = ?", true).
+    Set("t1.name", "updated").
+    Where("t1.id = ?", 1).
+    ToSql()
+
+// Structured JoinExpr works too
+sq.Update("orders").
+    JoinClause(
+        sq.JoinExpr("customers").
+            On("orders.customer_id = customers.id").
+            On("customers.active = ?", true),
+    ).
+    Set("orders.status", "verified").
+    ToSql()
+
+// JoinUsing convenience
+sq.Update("t1").JoinUsing("t2", "id").Set("t1.name", "updated").ToSql()
+// UPDATE t1 JOIN t2 USING (id) SET t1.name = ?
+```
+
+All join types are available: `Join`, `LeftJoin`, `RightJoin`, `InnerJoin`,
+`CrossJoin`, `FullJoin`, and their `*JoinUsing` variants.
+
+### DELETE ... JOIN (MySQL) / DELETE ... USING (PostgreSQL)
+
+**MySQL** — use `Join`, `LeftJoin`, etc. on a `DeleteBuilder`:
+
+```go
+sq.Delete("orders").
+    Join("customers ON orders.customer_id = customers.id").
+    Where("customers.active = ?", false).
+    ToSql()
+// DELETE orders FROM orders JOIN customers ON orders.customer_id = customers.id
+//   WHERE customers.active = ?
+
+// Structured JoinExpr works too
+sq.Delete("orders").
+    JoinClause(
+        sq.JoinExpr("customers").
+            On("orders.customer_id = customers.id").
+            On("customers.active = ?", false),
+    ).
+    ToSql()
+```
+
+**PostgreSQL** — use `Using` for `DELETE ... USING` syntax:
+
+```go
+sq.Delete("orders").
+    Using("customers").
+    Where("orders.customer_id = customers.id AND customers.active = ?", false).
+    PlaceholderFormat(sq.Dollar).
+    ToSql()
+// DELETE FROM orders USING customers
+//   WHERE orders.customer_id = customers.id AND customers.active = $1
+```
+
+Multiple USING tables:
+
+```go
+sq.Delete("t1").
+    Using("t2", "t3").
+    Where("t1.id = t2.t1_id AND t2.t3_id = t3.id AND t3.active = ?", true).
+    ToSql()
+// DELETE FROM t1 USING t2, t3 WHERE ...
+```
+
+All join types are available on `DeleteBuilder`: `Join`, `LeftJoin`, `RightJoin`,
+`InnerJoin`, `CrossJoin`, `FullJoin`, their `*JoinUsing` variants, and
+`JoinClause` for structured `JoinExpr` builders.
 
 ### Prefix and Suffix
 
@@ -618,9 +706,9 @@ Add arbitrary SQL before or after the main statement:
 
 ```go
 sq.Select("*").From("users").
-    Prefix("/* admin query */").
-    Suffix("FOR UPDATE").
-    Where(sq.Eq{"id": 1}).ToSql()
+Prefix("/* admin query */").
+Suffix("FOR UPDATE").
+Where(sq.Eq{"id": 1}).ToSql()
 // /* admin query */ SELECT * FROM users WHERE id = ? FOR UPDATE
 ```
 
@@ -647,13 +735,13 @@ All builders support context-aware variants for query execution:
 
 ```go
 rows, err := sq.Select("*").From("users").
-    RunWith(db).
-    QueryContext(ctx)
+RunWith(db).
+QueryContext(ctx)
 
 result, err := sq.Update("users").Set("name", "moe").
-    Where(sq.Eq{"id": 1}).
-    RunWith(db).
-    ExecContext(ctx)
+Where(sq.Eq{"id": 1}).
+RunWith(db).
+ExecContext(ctx)
 ```
 
 ### Debugging
@@ -663,7 +751,7 @@ result, err := sq.Update("users").Set("name", "moe").
 
 ```go
 fmt.Println(sq.DebugSqlizer(
-    sq.Select("*").From("users").Where(sq.Eq{"name": "moe"}),
+sq.Select("*").From("users").Where(sq.Eq{"name": "moe"}),
 ))
 // SELECT * FROM users WHERE name = 'moe'
 ```
@@ -702,8 +790,8 @@ sq.Select("*").SafeFrom(table).ToSQL()
 // Rejects anything that doesn't look like a simple identifier.
 col, err := sq.ValidateIdent(userSortColumn)
 if err != nil {
-    // Reject the request — input contains invalid characters.
-    return err
+// Reject the request — input contains invalid characters.
+return err
 }
 
 sql, args, err := sq.Select("*").From("users").SafeOrderByDir(col, sq.Desc).ToSQL()
@@ -720,9 +808,9 @@ orderCol, _ := sq.QuoteIdent("name")
 groupCol, _ := sq.QuoteIdent("department")
 
 sq.Select().SafeColumns(cols...).SafeFrom(table).
-    SafeGroupBy(groupCol).
-    SafeOrderByDir(orderCol, sq.Desc).
-    ToSQL()
+SafeGroupBy(groupCol).
+SafeOrderByDir(orderCol, sq.Desc).
+ToSQL()
 // SELECT "id", "name", "email" FROM "users" GROUP BY "department" ORDER BY "name" DESC
 
 // INSERT

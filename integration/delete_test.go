@@ -602,3 +602,221 @@ func TestDeleteReturningToSQL(t *testing.T) {
 		assert.Equal(t, "DELETE FROM t RETURNING id, name", sqlStr)
 	})
 }
+
+// ---------------------------------------------------------------------------
+// JOIN clauses
+// ---------------------------------------------------------------------------
+
+func TestDeleteJoin(t *testing.T) {
+	if isPostgres() {
+		t.Skip("DELETE ... JOIN is MySQL syntax; PostgreSQL uses DELETE ... USING")
+	}
+	if driverName == "sqlite3" {
+		t.Skip("DELETE ... JOIN is not supported by SQLite")
+	}
+
+	t.Run("BasicJoin", func(t *testing.T) {
+		// Arrange
+		createTable(t, "sq_del_j1", "(id INTEGER, name TEXT, ref_id INTEGER)")
+		createTable(t, "sq_del_j1_ref", "(id INTEGER, active INTEGER)")
+		seedTable(t, "INSERT INTO sq_del_j1 VALUES (1, 'a', 10), (2, 'b', 20), (3, 'c', 30)")
+		seedTable(t, "INSERT INTO sq_del_j1_ref VALUES (10, 0), (20, 1), (30, 0)")
+
+		// Act — delete rows where joined table has active=0
+		_, err := sb.Delete("sq_del_j1").
+			Join("sq_del_j1_ref ON sq_del_j1.ref_id = sq_del_j1_ref.id").
+			Where(sqrl.Eq{"sq_del_j1_ref.active": 0}).
+			Exec()
+
+		// Assert — rows 1 and 3 deleted (active=0)
+		require.NoError(t, err)
+
+		names := queryStrings(t, sb.Select("name").From("sq_del_j1").OrderBy("id"))
+		assert.Equal(t, []string{"b"}, names)
+	})
+
+	t.Run("LeftJoin", func(t *testing.T) {
+		// Arrange
+		createTable(t, "sq_del_lj", "(id INTEGER, name TEXT, ref_id INTEGER)")
+		createTable(t, "sq_del_lj_ref", "(id INTEGER)")
+		seedTable(t, "INSERT INTO sq_del_lj VALUES (1, 'a', 10), (2, 'b', 20)")
+		seedTable(t, "INSERT INTO sq_del_lj_ref VALUES (10)")
+
+		// Act — delete orphan rows (no match in ref table)
+		_, err := sb.Delete("sq_del_lj").
+			LeftJoin("sq_del_lj_ref ON sq_del_lj.ref_id = sq_del_lj_ref.id").
+			Where("sq_del_lj_ref.id IS NULL").
+			Exec()
+
+		// Assert — row 2 (orphan) is deleted
+		require.NoError(t, err)
+
+		names := queryStrings(t, sb.Select("name").From("sq_del_lj").OrderBy("id"))
+		assert.Equal(t, []string{"a"}, names)
+	})
+
+	t.Run("JoinWithPlaceholderArgs", func(t *testing.T) {
+		// Arrange
+		createTable(t, "sq_del_jp", "(id INTEGER, name TEXT, ref_id INTEGER)")
+		createTable(t, "sq_del_jp_ref", "(id INTEGER, status TEXT)")
+		seedTable(t, "INSERT INTO sq_del_jp VALUES (1, 'a', 10), (2, 'b', 20)")
+		seedTable(t, "INSERT INTO sq_del_jp_ref VALUES (10, 'inactive'), (20, 'active')")
+
+		// Act — delete rows where joined ref has status='inactive'
+		_, err := sb.Delete("sq_del_jp").
+			Join("sq_del_jp_ref ON sq_del_jp.ref_id = sq_del_jp_ref.id AND sq_del_jp_ref.status = ?", "inactive").
+			Exec()
+
+		// Assert — row 1 deleted
+		require.NoError(t, err)
+
+		names := queryStrings(t, sb.Select("name").From("sq_del_jp").OrderBy("id"))
+		assert.Equal(t, []string{"b"}, names)
+	})
+
+	t.Run("MultipleJoins", func(t *testing.T) {
+		// Arrange
+		createTable(t, "sq_del_mj", "(id INTEGER, name TEXT, cat_id INTEGER)")
+		createTable(t, "sq_del_mj_cat", "(id INTEGER, grp_id INTEGER)")
+		createTable(t, "sq_del_mj_grp", "(id INTEGER, label TEXT)")
+		seedTable(t, "INSERT INTO sq_del_mj VALUES (1, 'a', 10), (2, 'b', 20)")
+		seedTable(t, "INSERT INTO sq_del_mj_cat VALUES (10, 100), (20, 200)")
+		seedTable(t, "INSERT INTO sq_del_mj_grp VALUES (100, 'grpA'), (200, 'grpB')")
+
+		// Act — delete through two joins where grp label = grpA
+		_, err := sb.Delete("sq_del_mj").
+			Join("sq_del_mj_cat ON sq_del_mj.cat_id = sq_del_mj_cat.id").
+			Join("sq_del_mj_grp ON sq_del_mj_cat.grp_id = sq_del_mj_grp.id").
+			Where(sqrl.Eq{"sq_del_mj_grp.label": "grpA"}).
+			Exec()
+
+		// Assert — row 1 deleted
+		require.NoError(t, err)
+
+		names := queryStrings(t, sb.Select("name").From("sq_del_mj").OrderBy("id"))
+		assert.Equal(t, []string{"b"}, names)
+	})
+}
+
+// ---------------------------------------------------------------------------
+// USING clause (PostgreSQL)
+// ---------------------------------------------------------------------------
+
+func TestDeleteUsing(t *testing.T) {
+	if !isPostgres() {
+		t.Skip("DELETE ... USING is PostgreSQL-specific")
+	}
+
+	t.Run("BasicUsing", func(t *testing.T) {
+		// Arrange
+		createTable(t, "sq_del_u1", "(id INTEGER, name TEXT, ref_id INTEGER)")
+		createTable(t, "sq_del_u1_ref", "(id INTEGER, active INTEGER)")
+		seedTable(t, "INSERT INTO sq_del_u1 VALUES (1, 'a', 10), (2, 'b', 20)")
+		seedTable(t, "INSERT INTO sq_del_u1_ref VALUES (10, 0), (20, 1)")
+
+		// Act — delete rows using reference table
+		_, err := sb.Delete("sq_del_u1").
+			Using("sq_del_u1_ref").
+			Where("sq_del_u1.ref_id = sq_del_u1_ref.id AND sq_del_u1_ref.active = ?", 0).
+			Exec()
+
+		// Assert — row 1 deleted
+		require.NoError(t, err)
+
+		names := queryStrings(t, sb.Select("name").From("sq_del_u1").OrderBy("id"))
+		assert.Equal(t, []string{"b"}, names)
+	})
+
+	t.Run("UsingMultipleTables", func(t *testing.T) {
+		// Arrange
+		createTable(t, "sq_del_um", "(id INTEGER, name TEXT, ref_id INTEGER)")
+		createTable(t, "sq_del_um_r1", "(id INTEGER, r2_id INTEGER)")
+		createTable(t, "sq_del_um_r2", "(id INTEGER, label TEXT)")
+		seedTable(t, "INSERT INTO sq_del_um VALUES (1, 'a', 10), (2, 'b', 20)")
+		seedTable(t, "INSERT INTO sq_del_um_r1 VALUES (10, 100), (20, 200)")
+		seedTable(t, "INSERT INTO sq_del_um_r2 VALUES (100, 'del'), (200, 'keep')")
+
+		// Act — delete through two USING tables
+		_, err := sb.Delete("sq_del_um").
+			Using("sq_del_um_r1", "sq_del_um_r2").
+			Where("sq_del_um.ref_id = sq_del_um_r1.id AND sq_del_um_r1.r2_id = sq_del_um_r2.id AND sq_del_um_r2.label = ?", "del").
+			Exec()
+
+		// Assert
+		require.NoError(t, err)
+
+		names := queryStrings(t, sb.Select("name").From("sq_del_um").OrderBy("id"))
+		assert.Equal(t, []string{"b"}, names)
+	})
+}
+
+// ---------------------------------------------------------------------------
+// JOIN / USING SQL generation
+// ---------------------------------------------------------------------------
+
+func TestDeleteJoinSQLGeneration(t *testing.T) {
+	t.Run("JoinDollar", func(t *testing.T) {
+		sql, args, err := sqrl.Delete("t1").
+			Join("t2 ON t1.id = t2.t1_id AND t2.status = ?", "inactive").
+			Where("t1.id = ?", 1).
+			PlaceholderFormat(sqrl.Dollar).
+			ToSQL()
+		require.NoError(t, err)
+		assert.Equal(t,
+			"DELETE t1 FROM t1 JOIN t2 ON t1.id = t2.t1_id AND t2.status = $1 WHERE t1.id = $2",
+			sql)
+		assert.Equal(t, []interface{}{"inactive", 1}, args)
+	})
+
+	t.Run("UsingDollar", func(t *testing.T) {
+		sql, args, err := sqrl.Delete("t1").
+			Using("t2").
+			Where("t1.id = t2.t1_id AND t2.active = ?", false).
+			PlaceholderFormat(sqrl.Dollar).
+			ToSQL()
+		require.NoError(t, err)
+		assert.Equal(t,
+			"DELETE FROM t1 USING t2 WHERE t1.id = t2.t1_id AND t2.active = $1",
+			sql)
+		assert.Equal(t, []interface{}{false}, args)
+	})
+
+	t.Run("JoinExpr", func(t *testing.T) {
+		sql, args, err := sqrl.Delete("orders").
+			JoinClause(
+				sqrl.JoinExpr("customers").
+					Type(sqrl.JoinLeft).
+					On("orders.customer_id = customers.id").
+					On("customers.active = ?", false),
+			).
+			PlaceholderFormat(sqrl.Dollar).
+			ToSQL()
+		require.NoError(t, err)
+		assert.Equal(t,
+			"DELETE orders FROM orders LEFT JOIN customers ON orders.customer_id = customers.id AND customers.active = $1",
+			sql)
+		assert.Equal(t, []interface{}{false}, args)
+	})
+
+	t.Run("JoinUsing", func(t *testing.T) {
+		sql, _, err := sqrl.Delete("t1").
+			JoinUsing("t2", "id", "region").
+			ToSQL()
+		require.NoError(t, err)
+		assert.Equal(t, "DELETE t1 FROM t1 JOIN t2 USING (id, region)", sql)
+	})
+
+	t.Run("JoinWithReturning", func(t *testing.T) {
+		sql, args, err := sqrl.Delete("t1").
+			Join("t2 ON t1.id = t2.t1_id").
+			Where("t2.active = ?", false).
+			Returning("t1.id").
+			PlaceholderFormat(sqrl.Dollar).
+			ToSQL()
+		require.NoError(t, err)
+		assert.Equal(t,
+			"DELETE t1 FROM t1 JOIN t2 ON t1.id = t2.t1_id WHERE t2.active = $1 RETURNING t1.id",
+			sql)
+		assert.Equal(t, []interface{}{false}, args)
+	})
+}

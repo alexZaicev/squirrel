@@ -15,6 +15,7 @@ type updateData struct {
 	RunWith           BaseRunner
 	Prefixes          []Sqlizer
 	Table             string
+	Joins             []Sqlizer
 	SetClauses        []setClause
 	From              Sqlizer
 	WhereParts        []Sqlizer
@@ -88,6 +89,14 @@ func (d *updateData) toSQLRaw() (sqlStr string, args []any, err error) {
 
 	sql.WriteString("UPDATE ")
 	sql.WriteString(d.Table)
+
+	if len(d.Joins) > 0 {
+		sql.WriteString(" ")
+		args, err = appendToSQL(d.Joins, sql, " ", args)
+		if err != nil {
+			return
+		}
+	}
 
 	sql.WriteString(" SET ")
 	setSqls := make([]string, len(d.SetClauses))
@@ -284,6 +293,89 @@ func (b UpdateBuilder) FromSelect(from SelectBuilder, alias string) UpdateBuilde
 	// Prevent misnumbered parameters in nested selects (#183).
 	from = from.PlaceholderFormat(Question)
 	return builder.Set(b, "From", Alias(from, alias)).(UpdateBuilder)
+}
+
+// JoinClause adds a join clause to the query.
+func (b UpdateBuilder) JoinClause(pred any, args ...any) UpdateBuilder {
+	return builder.Append(b, "Joins", newPart(pred, args...)).(UpdateBuilder)
+}
+
+// Join adds a JOIN clause to the query.
+//
+// WARNING: The join clause is interpolated directly into the SQL string.
+// NEVER pass unsanitized user input to this method.
+func (b UpdateBuilder) Join(join string, rest ...any) UpdateBuilder {
+	return b.JoinClause("JOIN "+join, rest...)
+}
+
+// LeftJoin adds a LEFT JOIN clause to the query.
+//
+// WARNING: The join clause is interpolated directly into the SQL string.
+// NEVER pass unsanitized user input to this method.
+func (b UpdateBuilder) LeftJoin(join string, rest ...any) UpdateBuilder {
+	return b.JoinClause("LEFT JOIN "+join, rest...)
+}
+
+// RightJoin adds a RIGHT JOIN clause to the query.
+//
+// WARNING: The join clause is interpolated directly into the SQL string.
+// NEVER pass unsanitized user input to this method.
+func (b UpdateBuilder) RightJoin(join string, rest ...any) UpdateBuilder {
+	return b.JoinClause("RIGHT JOIN "+join, rest...)
+}
+
+// InnerJoin adds an INNER JOIN clause to the query.
+//
+// WARNING: The join clause is interpolated directly into the SQL string.
+// NEVER pass unsanitized user input to this method.
+func (b UpdateBuilder) InnerJoin(join string, rest ...any) UpdateBuilder {
+	return b.JoinClause("INNER JOIN "+join, rest...)
+}
+
+// CrossJoin adds a CROSS JOIN clause to the query.
+//
+// WARNING: The join clause is interpolated directly into the SQL string.
+// NEVER pass unsanitized user input to this method.
+func (b UpdateBuilder) CrossJoin(join string, rest ...any) UpdateBuilder {
+	return b.JoinClause("CROSS JOIN "+join, rest...)
+}
+
+// FullJoin adds a FULL OUTER JOIN clause to the query.
+//
+// WARNING: The join clause is interpolated directly into the SQL string.
+// NEVER pass unsanitized user input to this method.
+func (b UpdateBuilder) FullJoin(join string, rest ...any) UpdateBuilder {
+	return b.JoinClause("FULL OUTER JOIN "+join, rest...)
+}
+
+// JoinUsing adds a JOIN ... USING clause to the query.
+func (b UpdateBuilder) JoinUsing(table string, columns ...string) UpdateBuilder {
+	return b.JoinClause("JOIN " + table + " USING (" + strings.Join(columns, ", ") + ")")
+}
+
+// LeftJoinUsing adds a LEFT JOIN ... USING clause to the query.
+func (b UpdateBuilder) LeftJoinUsing(table string, columns ...string) UpdateBuilder {
+	return b.JoinClause("LEFT JOIN " + table + " USING (" + strings.Join(columns, ", ") + ")")
+}
+
+// RightJoinUsing adds a RIGHT JOIN ... USING clause to the query.
+func (b UpdateBuilder) RightJoinUsing(table string, columns ...string) UpdateBuilder {
+	return b.JoinClause("RIGHT JOIN " + table + " USING (" + strings.Join(columns, ", ") + ")")
+}
+
+// InnerJoinUsing adds an INNER JOIN ... USING clause to the query.
+func (b UpdateBuilder) InnerJoinUsing(table string, columns ...string) UpdateBuilder {
+	return b.JoinClause("INNER JOIN " + table + " USING (" + strings.Join(columns, ", ") + ")")
+}
+
+// CrossJoinUsing adds a CROSS JOIN ... USING clause to the query.
+func (b UpdateBuilder) CrossJoinUsing(table string, columns ...string) UpdateBuilder {
+	return b.JoinClause("CROSS JOIN " + table + " USING (" + strings.Join(columns, ", ") + ")")
+}
+
+// FullJoinUsing adds a FULL OUTER JOIN ... USING clause to the query.
+func (b UpdateBuilder) FullJoinUsing(table string, columns ...string) UpdateBuilder {
+	return b.JoinClause("FULL OUTER JOIN " + table + " USING (" + strings.Join(columns, ", ") + ")")
 }
 
 // Where adds WHERE expressions to the query.
