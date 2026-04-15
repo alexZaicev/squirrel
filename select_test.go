@@ -203,6 +203,117 @@ func TestSelectDistinctWithOptions(t *testing.T) {
 	assert.Equal(t, "SELECT DISTINCT SQL_CALC_FOUND_ROWS id FROM foo", sql)
 }
 
+// ---------------------------------------------------------------------------
+// DISTINCT ON
+// ---------------------------------------------------------------------------
+
+func TestSelectDistinctOn(t *testing.T) {
+	sql, _, err := Select("location", "time", "report").
+		From("weather_reports").
+		DistinctOn("location").
+		OrderBy("location", "time DESC").
+		ToSQL()
+	assert.NoError(t, err)
+	assert.Equal(t,
+		"SELECT DISTINCT ON (location) location, time, report "+
+			"FROM weather_reports ORDER BY location, time DESC",
+		sql)
+}
+
+func TestSelectDistinctOnMultipleColumns(t *testing.T) {
+	sql, _, err := Select("a", "b", "c").
+		From("t").
+		DistinctOn("a", "b").
+		ToSQL()
+	assert.NoError(t, err)
+	assert.Equal(t, "SELECT DISTINCT ON (a, b) a, b, c FROM t", sql)
+}
+
+func TestSelectDistinctOnAccumulates(t *testing.T) {
+	// Multiple DistinctOn() calls accumulate columns.
+	sql, _, err := Select("a", "b", "c").
+		From("t").
+		DistinctOn("a").
+		DistinctOn("b").
+		ToSQL()
+	assert.NoError(t, err)
+	assert.Equal(t, "SELECT DISTINCT ON (a, b) a, b, c FROM t", sql)
+}
+
+func TestSelectDistinctOnOverridesDistinct(t *testing.T) {
+	// DistinctOn takes precedence over Distinct.
+	sql, _, err := Select("a", "b").
+		From("t").
+		Distinct().
+		DistinctOn("a").
+		ToSQL()
+	assert.NoError(t, err)
+	assert.Equal(t, "SELECT DISTINCT ON (a) a, b FROM t", sql)
+}
+
+func TestSelectDistinctOnWithOptions(t *testing.T) {
+	sql, _, err := Select("a", "b").
+		From("t").
+		DistinctOn("a").
+		Options("SQL_NO_CACHE").
+		ToSQL()
+	assert.NoError(t, err)
+	assert.Equal(t, "SELECT DISTINCT ON (a) SQL_NO_CACHE a, b FROM t", sql)
+}
+
+func TestSelectDistinctOnWithWhere(t *testing.T) {
+	sql, args, err := Select("a", "b").
+		From("t").
+		DistinctOn("a").
+		Where("b > ?", 10).
+		OrderBy("a", "b DESC").
+		ToSQL()
+	assert.NoError(t, err)
+	assert.Equal(t,
+		"SELECT DISTINCT ON (a) a, b FROM t WHERE b > ? ORDER BY a, b DESC",
+		sql)
+	assert.Equal(t, []any{10}, args)
+}
+
+func TestSelectDistinctOnDollarPlaceholder(t *testing.T) {
+	sql, args, err := Select("a", "b").
+		From("t").
+		DistinctOn("a").
+		Where("b > ?", 10).
+		Limit(5).
+		PlaceholderFormat(Dollar).
+		ToSQL()
+	assert.NoError(t, err)
+	assert.Equal(t,
+		"SELECT DISTINCT ON (a) a, b FROM t WHERE b > $1 LIMIT $2",
+		sql)
+	assert.Equal(t, []any{10, uint64(5)}, args)
+}
+
+func TestSelectSafeDistinctOn(t *testing.T) {
+	col := MustQuoteIdent("location")
+	sql, _, err := Select("location", "time", "report").
+		From("weather_reports").
+		SafeDistinctOn(col).
+		OrderBy("location", "time DESC").
+		ToSQL()
+	assert.NoError(t, err)
+	assert.Equal(t,
+		`SELECT DISTINCT ON ("location") location, time, report `+
+			`FROM weather_reports ORDER BY location, time DESC`,
+		sql)
+}
+
+func TestSelectSafeDistinctOnMultiple(t *testing.T) {
+	cols, _ := QuoteIdents("a", "b")
+	sql, _, err := Select("a", "b", "c").
+		From("t").
+		SafeDistinctOn(cols...).
+		ToSQL()
+	assert.NoError(t, err)
+	assert.Equal(t, `SELECT DISTINCT ON ("a", "b") a, b, c FROM t`, sql)
+}
+
 func TestSelectWithRemoveLimit(t *testing.T) {
 	sql, _, err := Select("*").From("foo").Limit(10).RemoveLimit().ToSQL()
 

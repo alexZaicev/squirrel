@@ -14,6 +14,7 @@ type selectData struct {
 	RunWith           BaseRunner
 	Prefixes          []Sqlizer
 	Distinct          bool
+	DistinctOn        []string
 	Options           []string
 	Columns           []Sqlizer
 	From              Sqlizer
@@ -81,7 +82,11 @@ func (d *selectData) toSQLRaw() (sqlStr string, args []any, err error) {
 
 	sql.WriteString("SELECT ")
 
-	if d.Distinct {
+	if len(d.DistinctOn) > 0 {
+		sql.WriteString("DISTINCT ON (")
+		sql.WriteString(strings.Join(d.DistinctOn, ", "))
+		sql.WriteString(") ")
+	} else if d.Distinct {
 		sql.WriteString("DISTINCT ")
 	}
 
@@ -251,6 +256,32 @@ func (b SelectBuilder) PrefixExpr(expr Sqlizer) SelectBuilder {
 // DISTINCT keyword in the generated SQL.
 func (b SelectBuilder) Distinct() SelectBuilder {
 	return builder.Set(b, "Distinct", true).(SelectBuilder)
+}
+
+// DistinctOn adds a DISTINCT ON (columns...) clause to the query.
+// This is a PostgreSQL-specific feature that eliminates rows where all the
+// specified columns are equal, keeping only the first row of each group
+// (according to the ORDER BY clause).
+//
+// When DistinctOn is set, it takes precedence over Distinct() — the generated
+// SQL will use DISTINCT ON (...) rather than plain DISTINCT.
+//
+// Multiple calls accumulate columns.
+//
+// WARNING: Column names are interpolated directly into the SQL string without
+// sanitization. NEVER pass unsanitized user input to this method.
+// For dynamic column names from user input, use SafeDistinctOn instead.
+//
+// Ex:
+//
+//	sq.Select("location", "time", "report").
+//		From("weather_reports").
+//		DistinctOn("location").
+//		OrderBy("location", "time DESC")
+//	// SELECT DISTINCT ON (location) location, time, report
+//	//   FROM weather_reports ORDER BY location, time DESC
+func (b SelectBuilder) DistinctOn(columns ...string) SelectBuilder {
+	return builder.Extend(b, "DistinctOn", columns).(SelectBuilder)
 }
 
 // Options adds select option to the query.
@@ -497,6 +528,20 @@ func (b SelectBuilder) SuffixExpr(expr Sqlizer) SelectBuilder {
 //	sq.Select("*").SafeFrom(id)
 func (b SelectBuilder) SafeFrom(from Ident) SelectBuilder {
 	return builder.Set(b, "From", newPart(from.String())).(SelectBuilder)
+}
+
+// SafeDistinctOn adds a DISTINCT ON (columns...) clause to the query using
+// safe Ident values. This is the safe alternative to DistinctOn for cases
+// where column names come from user input or other untrusted sources.
+//
+// Multiple calls accumulate columns.
+//
+// Ex:
+//
+//	col, _ := sq.QuoteIdent(userInput)
+//	sq.Select("*").SafeDistinctOn(col).From("weather_reports")
+func (b SelectBuilder) SafeDistinctOn(columns ...Ident) SelectBuilder {
+	return builder.Extend(b, "DistinctOn", identsToStrings(columns)).(SelectBuilder)
 }
 
 // SafeColumns adds result columns to the query using safe Ident values.
