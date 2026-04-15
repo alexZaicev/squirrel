@@ -92,6 +92,37 @@ func ExampleSelectBuilder_Distinct_idempotent() {
 	// Output: SELECT DISTINCT country FROM users
 }
 
+func ExampleSelectBuilder_DistinctOn() {
+	sql, _, _ := sq.Select("location", "time", "report").
+		From("weather_reports").
+		DistinctOn("location").
+		OrderBy("location", "time DESC").
+		ToSQL()
+	fmt.Println(sql)
+	// Output: SELECT DISTINCT ON (location) location, time, report FROM weather_reports ORDER BY location, time DESC
+}
+
+func ExampleSelectBuilder_DistinctOn_multipleColumns() {
+	sql, _, _ := sq.Select("address", "category", "name").
+		From("stores").
+		DistinctOn("address", "category").
+		OrderBy("address", "category", "name").
+		ToSQL()
+	fmt.Println(sql)
+	// Output: SELECT DISTINCT ON (address, category) address, category, name FROM stores ORDER BY address, category, name
+}
+
+func ExampleSelectBuilder_SafeDistinctOn() {
+	col, _ := sq.QuoteIdent("location")
+	sql, _, _ := sq.Select("location", "time", "report").
+		From("weather_reports").
+		SafeDistinctOn(col).
+		OrderBy("location", "time DESC").
+		ToSQL()
+	fmt.Println(sql)
+	// Output: SELECT DISTINCT ON ("location") location, time, report FROM weather_reports ORDER BY location, time DESC
+}
+
 func ExampleSelectBuilder_FromSelect() {
 	usersByCompany := sq.Select("company", "count(*) as n_users").From("users").GroupBy("company")
 	query := sq.Select("company.id", "company.name", "users_by_company.n_users").

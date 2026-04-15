@@ -136,6 +136,136 @@ func TestSelectOptions(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
+// DISTINCT ON (PostgreSQL-specific)
+// ---------------------------------------------------------------------------
+
+func TestSelectDistinctOn(t *testing.T) {
+	t.Run("SQLGeneration", func(t *testing.T) {
+		// Verify the generated SQL contains DISTINCT ON (...).
+		q := sqrl.Select("location", "time", "report").
+			From("weather_reports").
+			DistinctOn("location").
+			OrderBy("location", "time DESC")
+
+		sqlStr, _, err := q.ToSQL()
+		require.NoError(t, err)
+		assert.Equal(t,
+			"SELECT DISTINCT ON (location) location, time, report "+
+				"FROM weather_reports ORDER BY location, time DESC",
+			sqlStr)
+	})
+
+	t.Run("SQLGenerationMultipleColumns", func(t *testing.T) {
+		q := sqrl.Select("a", "b", "c").
+			From("t").
+			DistinctOn("a", "b").
+			OrderBy("a", "b", "c")
+
+		sqlStr, _, err := q.ToSQL()
+		require.NoError(t, err)
+		assert.Equal(t,
+			"SELECT DISTINCT ON (a, b) a, b, c FROM t ORDER BY a, b, c",
+			sqlStr)
+	})
+
+	t.Run("SQLGenerationAccumulates", func(t *testing.T) {
+		// Multiple DistinctOn calls accumulate columns.
+		q := sqrl.Select("a", "b").
+			From("t").
+			DistinctOn("a").
+			DistinctOn("b")
+
+		sqlStr, _, err := q.ToSQL()
+		require.NoError(t, err)
+		assert.Equal(t, "SELECT DISTINCT ON (a, b) a, b FROM t", sqlStr)
+	})
+
+	t.Run("SQLGenerationOverridesDistinct", func(t *testing.T) {
+		// DistinctOn takes precedence over Distinct.
+		q := sqrl.Select("a").From("t").Distinct().DistinctOn("a")
+
+		sqlStr, _, err := q.ToSQL()
+		require.NoError(t, err)
+		assert.Contains(t, sqlStr, "DISTINCT ON (a)")
+		assert.NotContains(t, sqlStr, "DISTINCT DISTINCT")
+	})
+
+	t.Run("DollarPlaceholders", func(t *testing.T) {
+		q := sqrl.Select("a", "b").
+			From("t").
+			DistinctOn("a").
+			Where("b > ?", 10).
+			OrderBy("a", "b DESC").
+			Limit(5).
+			PlaceholderFormat(sqrl.Dollar)
+
+		sqlStr, args, err := q.ToSQL()
+		require.NoError(t, err)
+		assert.Equal(t,
+			"SELECT DISTINCT ON (a) a, b FROM t WHERE b > $1 ORDER BY a, b DESC LIMIT $2",
+			sqlStr)
+		assert.Equal(t, []interface{}{10, uint64(5)}, args)
+	})
+
+	t.Run("ExecutionPostgreSQL", func(t *testing.T) {
+		if !isPostgres() {
+			t.Skip("DISTINCT ON is PostgreSQL-specific")
+		}
+
+		// Use the sq_items table. For each category, DISTINCT ON should return
+		// only one row per category (the first one by ORDER BY).
+		q := sb.Select("category", "name").
+			From("sq_items").
+			Where(sqrl.NotEq{"category": nil}).
+			DistinctOn("category").
+			OrderBy("category", "price DESC")
+
+		rows, err := q.Query()
+		require.NoError(t, err)
+		defer rows.Close()
+
+		type result struct {
+			category string
+			name     string
+		}
+		var results []result
+		for rows.Next() {
+			var r result
+			require.NoError(t, rows.Scan(&r.category, &r.name))
+			results = append(results, r)
+		}
+		require.NoError(t, rows.Err())
+
+		// One row per category, the one with highest price:
+		// fruit: apple(100) > banana(50)
+		// pastry: donut(200)
+		// vegetable: eggplant(150) > carrot(75)
+		assert.Len(t, results, 3)
+		categoryMap := make(map[string]string)
+		for _, r := range results {
+			categoryMap[r.category] = r.name
+		}
+		assert.Equal(t, "apple", categoryMap["fruit"])
+		assert.Equal(t, "donut", categoryMap["pastry"])
+		assert.Equal(t, "eggplant", categoryMap["vegetable"])
+	})
+
+	t.Run("SafeDistinctOn", func(t *testing.T) {
+		col, err := sqrl.QuoteIdent("category")
+		require.NoError(t, err)
+
+		q := sqrl.Select("category", "name").
+			From("sq_items").
+			SafeDistinctOn(col).
+			OrderBy("category", "name")
+
+		sqlStr, _, err := q.ToSQL()
+		require.NoError(t, err)
+		assert.Contains(t, sqlStr, `DISTINCT ON ("category")`)
+	})
+}
+
+// ---------------------------------------------------------------------------
 // WHERE clause
 // ---------------------------------------------------------------------------
 

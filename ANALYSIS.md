@@ -262,7 +262,7 @@ sq.Insert("employees").Columns("id", "name").
    - `Ident` type implements `Sqlizer`, so it can be used anywhere a `Sqlizer` is accepted.
 
 3. **Safe builder methods** that accept `Ident` values instead of raw strings:
-   - **SelectBuilder:** `SafeFrom(Ident)`, `SafeColumns(...Ident)`, `SafeGroupBy(...Ident)`, `SafeOrderBy(...Ident)`, `SafeOrderByDir(Ident, OrderDir)`
+   - **SelectBuilder:** `SafeFrom(Ident)`, `SafeColumns(...Ident)`, `SafeGroupBy(...Ident)`, `SafeOrderBy(...Ident)`, `SafeOrderByDir(Ident, OrderDir)`, `SafeDistinctOn(...Ident)`
    - **InsertBuilder:** `SafeInto(Ident)`, `SafeColumns(...Ident)`
    - **UpdateBuilder:** `SafeTable(Ident)`, `SafeSet(Ident, any)`
    - **DeleteBuilder:** `SafeFrom(Ident)`

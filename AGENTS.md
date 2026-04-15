@@ -127,6 +127,7 @@ The `Placeholders(count int) string` function generates a comma-separated list o
 
 **SelectBuilder** notable methods:
 - `Distinct()` — add DISTINCT keyword (idempotent — multiple calls produce a single DISTINCT)
+- `DistinctOn(columns ...string)` — add PostgreSQL `DISTINCT ON (col1, col2, ...)` clause; takes precedence over `Distinct()`; multiple calls accumulate columns
 - `Options()` — add SELECT options (e.g., `SQL_NO_CACHE`)
 - `Columns()`, `Column()`, `RemoveColumns()` — manage result columns
 - `From()`, `FromSelect()` — set FROM clause (supports subqueries)
@@ -137,7 +138,7 @@ The `Placeholders(count int) string` function generates a comma-separated list o
 - `OrderBy()`, `OrderByClause()` — simple or complex ORDER BY
 - `Limit()`, `RemoveLimit()`, `Offset()`, `RemoveOffset()` — parameterized (`LIMIT ?` / `OFFSET ?` with bound args)
 - `Scan()` — shortcut for `QueryRow().Scan()`
-- `SafeFrom()`, `SafeColumns()`, `SafeGroupBy()`, `SafeOrderBy()`, `SafeOrderByDir()` — safe alternatives accepting `Ident` values for dynamic identifiers from user input
+- `SafeFrom()`, `SafeColumns()`, `SafeGroupBy()`, `SafeOrderBy()`, `SafeOrderByDir()`, `SafeDistinctOn()` — safe alternatives accepting `Ident` values for dynamic identifiers from user input
 
 **InsertBuilder** notable methods:
 - `Into()`, `Columns()`, `Values()`
@@ -239,7 +240,7 @@ Do not add new dependencies without strong justification. This is a maintenance-
 ## Security considerations
 
 - Never interpolate user input directly into SQL strings. Always use parameterized placeholders (`?`).
-- **Identifier safety:** Methods like `From()`, `Into()`, `Table()`, `Columns()`, `Set()`, `Join()`, `OrderBy()`, `GroupBy()`, and `Options()` interpolate strings directly into SQL. When identifiers come from user input (e.g., dynamic sort columns from API query parameters), use `QuoteIdent()` or `ValidateIdent()` to produce safe `Ident` values, then pass them to the corresponding `Safe*` builder methods (`SafeFrom()`, `SafeInto()`, `SafeTable()`, `SafeColumns()`, `SafeSet()`, `SafeOrderBy()`, `SafeOrderByDir()`, `SafeGroupBy()`).
+- **Identifier safety:** Methods like `From()`, `Into()`, `Table()`, `Columns()`, `Set()`, `Join()`, `OrderBy()`, `GroupBy()`, `DistinctOn()`, and `Options()` interpolate strings directly into SQL. When identifiers come from user input (e.g., dynamic sort columns from API query parameters), use `QuoteIdent()` or `ValidateIdent()` to produce safe `Ident` values, then pass them to the corresponding `Safe*` builder methods (`SafeFrom()`, `SafeInto()`, `SafeTable()`, `SafeColumns()`, `SafeSet()`, `SafeOrderBy()`, `SafeOrderByDir()`, `SafeGroupBy()`, `SafeDistinctOn()`).
 - Two strategies for identifier safety: `QuoteIdent` wraps any string in ANSI double quotes (maximum flexibility), while `ValidateIdent` rejects strings that don't match a strict identifier pattern (maximum strictness). Choose based on your use case.
 - `DebugSqlizer` output should never be executed — it inlines arguments for display purposes only.
 - When modifying placeholder replacement logic, ensure escaped `??` sequences are handled correctly to prevent injection vectors.
