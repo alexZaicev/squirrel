@@ -1396,3 +1396,90 @@ func TestSelectWhereAutoParenOR(t *testing.T) {
 		assert.Equal(t, []interface{}{1, 2, 3}, args)
 	})
 }
+
+// ---------------------------------------------------------------------------
+// FROM (VALUES ...)
+// ---------------------------------------------------------------------------
+
+func TestSelectFromValues(t *testing.T) {
+	if isMySQL() || driverName == "sqlite3" {
+		t.Skip("SELECT FROM (VALUES ...) with column aliases is PostgreSQL-specific")
+	}
+
+	// Act — select from inline values
+	rows, err := sb.Select("v.id", "v.name").
+		FromValues(
+			[][]interface{}{{1, "Alice"}, {2, "Bob"}},
+			"v", "id", "name",
+		).
+		Query()
+
+	// Assert
+	require.NoError(t, err)
+	defer rows.Close()
+
+	type result struct {
+		id   int
+		name string
+	}
+	var results []result
+	for rows.Next() {
+		var r result
+		require.NoError(t, rows.Scan(&r.id, &r.name))
+		results = append(results, r)
+	}
+	require.NoError(t, rows.Err())
+	assert.Equal(t, []result{{1, "Alice"}, {2, "Bob"}}, results)
+}
+
+func TestSelectFromValuesWithWhere(t *testing.T) {
+	if isMySQL() || driverName == "sqlite3" {
+		t.Skip("SELECT FROM (VALUES ...) with column aliases is PostgreSQL-specific")
+	}
+
+	// Act — filter inline values
+	vals := queryInts(t, sb.Select("v.id").
+		FromValues(
+			[][]interface{}{{1, "Alice"}, {2, "Bob"}, {3, "Carol"}},
+			"v", "id", "name",
+		).
+		Where("v.id > ?", 1).
+		OrderBy("v.id"))
+
+	// Assert
+	assert.Equal(t, []int{2, 3}, vals)
+}
+
+func TestSelectFromValuesDollarPlaceholderSQL(t *testing.T) {
+	// Verify SQL generation with Dollar placeholders (no execution needed).
+	sql, args, err := sqrl.Select("v.id", "v.name").
+		FromValues(
+			[][]interface{}{{1, "Alice"}, {2, "Bob"}},
+			"v", "id", "name",
+		).
+		PlaceholderFormat(sqrl.Dollar).
+		ToSQL()
+	require.NoError(t, err)
+
+	expectedSQL := "SELECT v.id, v.name FROM (VALUES ($1::bigint, $2::text), ($3, $4)) AS v(id, name)"
+	assert.Equal(t, expectedSQL, sql)
+	assert.Equal(t, []interface{}{1, "Alice", 2, "Bob"}, args)
+}
+
+func TestSelectFromValuesWithJoin(t *testing.T) {
+	if isMySQL() || driverName == "sqlite3" {
+		t.Skip("SELECT FROM (VALUES ...) with column aliases is PostgreSQL-specific")
+	}
+
+	// Act — join inline values with a real table
+	names := queryStrings(t, sb.Select("sq_items.name").
+		FromValues(
+			[][]interface{}{{1}, {3}},
+			"v", "id",
+		).
+		Join("sq_items ON sq_items.id = v.id").
+		OrderBy("sq_items.id"))
+
+	// Assert
+	assert.Equal(t, []string{"apple", "carrot"}, names)
+}

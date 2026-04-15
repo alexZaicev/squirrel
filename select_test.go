@@ -706,3 +706,122 @@ func TestSelectBuilderParameterizedLimitPreparedStatementReuse(t *testing.T) {
 	assert.Equal(t, []any{uint64(10), uint64(0)}, args1)
 	assert.Equal(t, []any{uint64(20), uint64(10)}, args2)
 }
+
+// ---------------------------------------------------------------------------
+// FROM (VALUES ...)
+// ---------------------------------------------------------------------------
+
+func TestSelectBuilderFromValues(t *testing.T) {
+	sql, args, err := Select("v.id", "v.name").
+		FromValues(
+			[][]interface{}{{1, "Alice"}, {2, "Bob"}},
+			"v", "id", "name",
+		).
+		ToSQL()
+	assert.NoError(t, err)
+
+	expectedSQL := "SELECT v.id, v.name FROM (VALUES (?::bigint, ?::text), (?, ?)) AS v(id, name)"
+	assert.Equal(t, expectedSQL, sql)
+
+	expectedArgs := []interface{}{1, "Alice", 2, "Bob"}
+	assert.Equal(t, expectedArgs, args)
+}
+
+func TestSelectBuilderFromValuesSingleRow(t *testing.T) {
+	sql, args, err := Select("v.x").
+		FromValues(
+			[][]interface{}{{42}},
+			"v", "x",
+		).
+		ToSQL()
+	assert.NoError(t, err)
+
+	expectedSQL := "SELECT v.x FROM (VALUES (?::bigint)) AS v(x)"
+	assert.Equal(t, expectedSQL, sql)
+
+	expectedArgs := []interface{}{42}
+	assert.Equal(t, expectedArgs, args)
+}
+
+func TestSelectBuilderFromValuesDollarPlaceholders(t *testing.T) {
+	sql, args, err := Select("v.id", "v.name").
+		FromValues(
+			[][]interface{}{{1, "Alice"}, {2, "Bob"}},
+			"v", "id", "name",
+		).
+		PlaceholderFormat(Dollar).
+		ToSQL()
+	assert.NoError(t, err)
+
+	expectedSQL := "SELECT v.id, v.name FROM (VALUES ($1::bigint, $2::text), ($3, $4)) AS v(id, name)"
+	assert.Equal(t, expectedSQL, sql)
+
+	expectedArgs := []interface{}{1, "Alice", 2, "Bob"}
+	assert.Equal(t, expectedArgs, args)
+}
+
+func TestSelectBuilderFromValuesWithWhere(t *testing.T) {
+	sql, args, err := Select("v.id", "v.name").
+		FromValues(
+			[][]interface{}{{1, "Alice"}, {2, "Bob"}, {3, "Carol"}},
+			"v", "id", "name",
+		).
+		Where("v.id > ?", 1).
+		ToSQL()
+	assert.NoError(t, err)
+
+	expectedSQL := "SELECT v.id, v.name FROM (VALUES (?::bigint, ?::text), (?, ?), (?, ?)) AS v(id, name) WHERE v.id > ?"
+	assert.Equal(t, expectedSQL, sql)
+
+	expectedArgs := []interface{}{1, "Alice", 2, "Bob", 3, "Carol", 1}
+	assert.Equal(t, expectedArgs, args)
+}
+
+func TestSelectBuilderFromValuesNoColumns(t *testing.T) {
+	sql, args, err := Select("v.column1").
+		FromValues(
+			[][]interface{}{{1}},
+			"v",
+		).
+		ToSQL()
+	assert.NoError(t, err)
+
+	expectedSQL := "SELECT v.column1 FROM (VALUES (?::bigint)) AS v"
+	assert.Equal(t, expectedSQL, sql)
+
+	expectedArgs := []interface{}{1}
+	assert.Equal(t, expectedArgs, args)
+}
+
+func TestSelectBuilderFromValuesEmptyRowsErr(t *testing.T) {
+	_, _, err := Select("v.x").
+		FromValues([][]interface{}{}, "v", "x").
+		ToSQL()
+	assert.Error(t, err)
+}
+
+func TestSelectBuilderFromValuesEmptyAliasErr(t *testing.T) {
+	_, _, err := Select("v.x").
+		FromValues([][]interface{}{{1}}, "", "x").
+		ToSQL()
+	assert.Error(t, err)
+}
+
+func TestSelectBuilderFromValuesWithJoin(t *testing.T) {
+	sql, args, err := Select("v.id", "t.name").
+		FromValues(
+			[][]interface{}{{1}, {2}},
+			"v", "id",
+		).
+		Join("t ON t.id = v.id").
+		ToSQL()
+	assert.NoError(t, err)
+
+	expectedSQL := "SELECT v.id, t.name " +
+		"FROM (VALUES (?::bigint), (?)) AS v(id) " +
+		"JOIN t ON t.id = v.id"
+	assert.Equal(t, expectedSQL, sql)
+
+	expectedArgs := []interface{}{1, 2}
+	assert.Equal(t, expectedArgs, args)
+}

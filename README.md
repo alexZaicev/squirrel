@@ -393,6 +393,46 @@ sql, args, err := sq.Select("*").FromSelect(sub, "subquery").ToSql()
 // SELECT * FROM (SELECT id FROM other_table WHERE age > ?) AS subquery
 ```
 
+### SELECT ... FROM (VALUES ...) (PostgreSQL)
+
+Use `FromValues` on a `SelectBuilder` to select from an inline VALUES list.
+This is useful for constructing data on-the-fly without a real table:
+
+```go
+sq.Select("v.id", "v.name").
+    FromValues(
+        [][]interface{}{{1, "Alice"}, {2, "Bob"}},
+        "v", "id", "name",
+    ).
+    PlaceholderFormat(sq.Dollar).
+    ToSql()
+// SELECT v.id, v.name FROM (VALUES ($1, $2), ($3, $4)) AS v(id, name)
+```
+
+This composes naturally with `InsertBuilder.Select()` for
+`INSERT ... SELECT FROM (VALUES ...)` — a powerful PostgreSQL pattern for
+bulk-inserting with filtering or deduplication:
+
+```go
+sq.Insert("employees").
+    Columns("id", "name").
+    Select(
+        sq.Select("v.id", "v.name").
+            FromValues(
+                [][]interface{}{{1, "Alice"}, {2, "Bob"}},
+                "v", "id", "name",
+            ).
+            Where(sq.NotExists(
+                sq.Select("1").From("employees e").Where("e.id = v.id"),
+            )),
+    ).
+    PlaceholderFormat(sq.Dollar).
+    ToSql()
+// INSERT INTO employees (id,name)
+//   SELECT v.id, v.name FROM (VALUES ($1, $2), ($3, $4)) AS v(id, name)
+//   WHERE NOT EXISTS (SELECT 1 FROM employees e WHERE e.id = v.id)
+```
+
 Use a `SelectBuilder` as a value in `Eq` / `NotEq` for `WHERE ... IN (SELECT ...)`:
 
 ```go
@@ -610,6 +650,46 @@ From("accounts").
 Where("users.account_id = accounts.id").
 ToSql()
 // UPDATE users SET name = ? FROM accounts WHERE users.account_id = accounts.id
+```
+
+### UPDATE ... FROM (VALUES ...) — Bulk Updates (PostgreSQL)
+
+Use `FromValues` on an `UpdateBuilder` for PostgreSQL-style bulk updates using
+inline `VALUES` lists. This is efficient for updating multiple rows with
+different values in a single statement:
+
+```go
+sq.Update("employees").
+    Set("name", sq.Expr("v.name")).
+    Set("salary", sq.Expr("v.salary")).
+    FromValues(
+        [][]interface{}{{1, "Alice", 50000}, {2, "Bob", 60000}},
+        "v", "id", "name", "salary",
+    ).
+    Where("employees.id = v.id").
+    PlaceholderFormat(sq.Dollar).
+    ToSql()
+// UPDATE employees SET name = v.name, salary = v.salary
+//   FROM (VALUES ($1, $2, $3), ($4, $5, $6)) AS v(id, name, salary)
+//   WHERE employees.id = v.id
+// args: [1, "Alice", 50000, 2, "Bob", 60000]
+```
+
+You can also mix regular `Set` values with expressions referencing the VALUES alias:
+
+```go
+sq.Update("t").
+    Set("flag", "yes").                   // regular parameterized value
+    Set("name", sq.Expr("v.name")).       // reference the VALUES alias
+    FromValues(
+        [][]interface{}{{1, "Alice"}, {2, "Bob"}},
+        "v", "id", "name",
+    ).
+    Where("t.id = v.id").
+    ToSql()
+// UPDATE t SET flag = ?, name = v.name
+//   FROM (VALUES (?, ?), (?, ?)) AS v(id, name)
+//   WHERE t.id = v.id
 ```
 
 ### UPDATE ... JOIN (MySQL)

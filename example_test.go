@@ -135,6 +135,40 @@ func ExampleSelectBuilder_FromSelect() {
 	// Output: SELECT company.id, company.name, users_by_company.n_users FROM (SELECT company, count(*) as n_users FROM users GROUP BY company) AS users_by_company JOIN company on company.id = users_by_company.company
 }
 
+func ExampleSelectBuilder_FromValues() {
+	sql, args, _ := sq.Select("v.id", "v.name").
+		FromValues(
+			[][]interface{}{{1, "Alice"}, {2, "Bob"}},
+			"v", "id", "name",
+		).
+		PlaceholderFormat(sq.Dollar).
+		ToSQL()
+	fmt.Println(sql)
+	fmt.Println(args)
+	// Output:
+	// SELECT v.id, v.name FROM (VALUES ($1::bigint, $2::text), ($3, $4)) AS v(id, name)
+	// [1 Alice 2 Bob]
+}
+
+func ExampleInsertBuilder_Select_fromValues() {
+	sql, args, _ := sq.Insert("employees").
+		Columns("id", "name").
+		Select(
+			sq.Select("v.id", "v.name").
+				FromValues(
+					[][]interface{}{{1, "Alice"}, {2, "Bob"}},
+					"v", "id", "name",
+				),
+		).
+		PlaceholderFormat(sq.Dollar).
+		ToSQL()
+	fmt.Println(sql)
+	fmt.Println(args)
+	// Output:
+	// INSERT INTO employees (id,name) SELECT v.id, v.name FROM (VALUES ($1::bigint, $2::text), ($3, $4)) AS v(id, name)
+	// [1 Alice 2 Bob]
+}
+
 func ExampleSelectBuilder_Join() {
 	sql, _, _ := sq.Select("u.id", "u.name", "o.total").
 		From("users u").
@@ -662,6 +696,24 @@ func ExampleUpdateBuilder_JoinClause() {
 	// Output:
 	// UPDATE orders JOIN customers ON orders.customer_id = customers.id AND customers.active = ? SET orders.status = ?
 	// [true verified]
+}
+
+func ExampleUpdateBuilder_FromValues() {
+	sql, args, _ := sq.Update("t").
+		Set("name", sq.Expr("v.name")).
+		Set("salary", sq.Expr("v.salary")).
+		FromValues(
+			[][]interface{}{{1, "Alice", 50000}, {2, "Bob", 60000}},
+			"v", "id", "name", "salary",
+		).
+		Where("t.id = v.id").
+		PlaceholderFormat(sq.Dollar).
+		ToSQL()
+	fmt.Println(sql)
+	fmt.Println(args)
+	// Output:
+	// UPDATE t SET name = v.name, salary = v.salary FROM (VALUES ($1::bigint, $2::text, $3::bigint), ($4, $5, $6)) AS v(id, name, salary) WHERE t.id = v.id
+	// [1 Alice 50000 2 Bob 60000]
 }
 
 // ---------------------------------------------------------------------------

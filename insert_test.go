@@ -767,3 +767,193 @@ func TestInsertBuilderSafeSetColumn(t *testing.T) {
 	expectedArgs := []any{1, "John"}
 	assert.Equal(t, expectedArgs, args)
 }
+
+// ---------------------------------------------------------------------------
+// INSERT ... SELECT FROM (VALUES ...)
+// ---------------------------------------------------------------------------
+
+func TestInsertBuilderSelectFromValues(t *testing.T) {
+	sql, args, err := Insert("employees").
+		Columns("id", "name").
+		Select(
+			Select("v.id", "v.name").
+				FromValues(
+					[][]interface{}{{1, "Alice"}, {2, "Bob"}},
+					"v", "id", "name",
+				),
+		).
+		ToSQL()
+	assert.NoError(t, err)
+
+	expectedSQL := "INSERT INTO employees (id,name) " +
+		"SELECT v.id, v.name FROM (VALUES (?::bigint, ?::text), (?, ?)) AS v(id, name)"
+	assert.Equal(t, expectedSQL, sql)
+
+	expectedArgs := []interface{}{1, "Alice", 2, "Bob"}
+	assert.Equal(t, expectedArgs, args)
+}
+
+func TestInsertBuilderSelectFromValuesDollarPlaceholders(t *testing.T) {
+	sql, args, err := Insert("employees").
+		Columns("id", "name").
+		Select(
+			Select("v.id", "v.name").
+				FromValues(
+					[][]interface{}{{1, "Alice"}, {2, "Bob"}},
+					"v", "id", "name",
+				),
+		).
+		PlaceholderFormat(Dollar).
+		ToSQL()
+	assert.NoError(t, err)
+
+	expectedSQL := "INSERT INTO employees (id,name) " +
+		"SELECT v.id, v.name FROM (VALUES ($1::bigint, $2::text), ($3, $4)) AS v(id, name)"
+	assert.Equal(t, expectedSQL, sql)
+
+	expectedArgs := []interface{}{1, "Alice", 2, "Bob"}
+	assert.Equal(t, expectedArgs, args)
+}
+
+func TestInsertBuilderSelectFromValuesWithWhere(t *testing.T) {
+	sql, args, err := Insert("employees").
+		Columns("id", "name").
+		Select(
+			Select("v.id", "v.name").
+				FromValues(
+					[][]interface{}{{1, "Alice"}, {2, "Bob"}, {3, "Carol"}},
+					"v", "id", "name",
+				).
+				Where("v.id > ?", 1),
+		).
+		ToSQL()
+	assert.NoError(t, err)
+
+	expectedSQL := "INSERT INTO employees (id,name) " +
+		"SELECT v.id, v.name FROM (VALUES (?::bigint, ?::text), (?, ?), (?, ?)) AS v(id, name) " +
+		"WHERE v.id > ?"
+	assert.Equal(t, expectedSQL, sql)
+
+	expectedArgs := []interface{}{1, "Alice", 2, "Bob", 3, "Carol", 1}
+	assert.Equal(t, expectedArgs, args)
+}
+
+func TestInsertBuilderSelectFromValuesWithNotExists(t *testing.T) {
+	// INSERT ... SELECT FROM (VALUES ...) WHERE NOT EXISTS — a common upsert-alternative pattern
+	sql, args, err := Insert("employees").
+		Columns("id", "name").
+		Select(
+			Select("v.id", "v.name").
+				FromValues(
+					[][]interface{}{{1, "Alice"}},
+					"v", "id", "name",
+				).
+				Where(
+					NotExists(Select("1").From("employees e").Where("e.id = v.id")),
+				),
+		).
+		PlaceholderFormat(Dollar).
+		ToSQL()
+	assert.NoError(t, err)
+
+	expectedSQL := "INSERT INTO employees (id,name) " +
+		"SELECT v.id, v.name FROM (VALUES ($1::bigint, $2::text)) AS v(id, name) " +
+		"WHERE NOT EXISTS (SELECT 1 FROM employees e WHERE e.id = v.id)"
+	assert.Equal(t, expectedSQL, sql)
+
+	expectedArgs := []interface{}{1, "Alice"}
+	assert.Equal(t, expectedArgs, args)
+}
+
+func TestInsertBuilderSelectFromValuesWithReturning(t *testing.T) {
+	sql, args, err := Insert("employees").
+		Columns("id", "name").
+		Select(
+			Select("v.id", "v.name").
+				FromValues(
+					[][]interface{}{{1, "Alice"}},
+					"v", "id", "name",
+				),
+		).
+		Returning("id").
+		PlaceholderFormat(Dollar).
+		ToSQL()
+	assert.NoError(t, err)
+
+	expectedSQL := "INSERT INTO employees (id,name) " +
+		"SELECT v.id, v.name FROM (VALUES ($1::bigint, $2::text)) AS v(id, name) " +
+		"RETURNING id"
+	assert.Equal(t, expectedSQL, sql)
+
+	expectedArgs := []interface{}{1, "Alice"}
+	assert.Equal(t, expectedArgs, args)
+}
+
+func TestInsertBuilderSelectFromValuesColonPlaceholders(t *testing.T) {
+	sql, args, err := Insert("t").
+		Columns("id", "name").
+		Select(
+			Select("v.id", "v.name").
+				FromValues(
+					[][]interface{}{{1, "Alice"}, {2, "Bob"}},
+					"v", "id", "name",
+				),
+		).
+		PlaceholderFormat(Colon).
+		ToSQL()
+	assert.NoError(t, err)
+
+	expectedSQL := "INSERT INTO t (id,name) " +
+		"SELECT v.id, v.name FROM (VALUES (:1::bigint, :2::text), (:3, :4)) AS v(id, name)"
+	assert.Equal(t, expectedSQL, sql)
+
+	expectedArgs := []interface{}{1, "Alice", 2, "Bob"}
+	assert.Equal(t, expectedArgs, args)
+}
+
+func TestInsertBuilderSelectFromValuesAtPPlaceholders(t *testing.T) {
+	sql, args, err := Insert("t").
+		Columns("id", "name").
+		Select(
+			Select("v.id", "v.name").
+				FromValues(
+					[][]interface{}{{1, "Alice"}, {2, "Bob"}},
+					"v", "id", "name",
+				),
+		).
+		PlaceholderFormat(AtP).
+		ToSQL()
+	assert.NoError(t, err)
+
+	expectedSQL := "INSERT INTO t (id,name) " +
+		"SELECT v.id, v.name FROM (VALUES (@p1::bigint, @p2::text), (@p3, @p4)) AS v(id, name)"
+	assert.Equal(t, expectedSQL, sql)
+
+	expectedArgs := []interface{}{1, "Alice", 2, "Bob"}
+	assert.Equal(t, expectedArgs, args)
+}
+
+func TestInsertBuilderSelectFromValuesWithOnConflict(t *testing.T) {
+	sql, args, err := Insert("employees").
+		Columns("id", "name").
+		Select(
+			Select("v.id", "v.name").
+				FromValues(
+					[][]interface{}{{1, "Alice"}, {2, "Bob"}},
+					"v", "id", "name",
+				),
+		).
+		OnConflictColumns("id").
+		OnConflictDoNothing().
+		PlaceholderFormat(Dollar).
+		ToSQL()
+	assert.NoError(t, err)
+
+	expectedSQL := "INSERT INTO employees (id,name) " +
+		"SELECT v.id, v.name FROM (VALUES ($1::bigint, $2::text), ($3, $4)) AS v(id, name) " +
+		"ON CONFLICT (id) DO NOTHING"
+	assert.Equal(t, expectedSQL, sql)
+
+	expectedArgs := []interface{}{1, "Alice", 2, "Bob"}
+	assert.Equal(t, expectedArgs, args)
+}
